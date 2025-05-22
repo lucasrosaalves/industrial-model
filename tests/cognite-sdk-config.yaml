@@ -1,0 +1,15 @@
+cognite:
+  project: "${CDF_PROJECT}"
+  client_name: "${CDF_CLIENT_NAME}"
+  base_url: "https://${CDF_CLUSTER}.cognitedata.com"
+  credentials:
+    client_credentials:
+      token_url: "${CDF_TOKEN_URL}"
+      client_id: "${CDF_CLIENT_ID}"
+      client_secret: "${CDF_CLIENT_SECRET}"
+      scopes: ["https://${CDF_CLUSTER}.cognitedata.com/.default"]
+
+data_model:
+  external_id: "${CDF_DATA_MODEL_EXTERNAL_ID}"
+  space: "${CDF_DATA_MODEL_SPACE}"
+  version: "${CDF_DATA_MODEL_VERSION}"
