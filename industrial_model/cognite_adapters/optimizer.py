@@ -1,5 +1,8 @@
+from threading import Lock
+
 from cognite.client import CogniteClient
 
+from industrial_model.config import DataModelId
 from industrial_model.models import TViewInstance
 from industrial_model.statements import (
     BoolExpression,
@@ -14,11 +17,11 @@ SPACE_PROPERTY = "space"
 
 class QueryOptimizer:
     def __init__(
-        self,
-        cognite_client: CogniteClient,
+        self, cognite_client: CogniteClient, data_model_id: DataModelId
     ):
-        self._all_spaces: list[str] | None = None
+        self._all_spaces = data_model_id.instance_spaces
         self._cognite_client = cognite_client
+        self._lock = Lock()
 
     def optimize(self, statement: Statement[TViewInstance]) -> None:
         instance_spaces = statement.entity.view_config.get("instance_spaces")
@@ -58,7 +61,7 @@ class QueryOptimizer:
         return False
 
     def _find_spaces(self, instance_spaces_prefix: str) -> list[str]:
-        all_spaces = self._get_all_spaces()
+        all_spaces = self._load_spaces()
 
         return [
             space
@@ -66,12 +69,18 @@ class QueryOptimizer:
             if space.startswith(instance_spaces_prefix)
         ]
 
-    def _get_all_spaces(self) -> list[str]:
+    def _load_spaces(self) -> list[str]:
         all_spaces = self._all_spaces
-        if all_spaces is None:
+        if all_spaces:
+            return all_spaces
+
+        with self._lock:
+            if self._all_spaces:
+                return self._all_spaces
+
             all_spaces = self._cognite_client.data_modeling.spaces.list(
                 limit=-1
             ).as_ids()
 
-        self._all_spaces = all_spaces
-        return all_spaces
+            self._all_spaces = all_spaces
+            return all_spaces

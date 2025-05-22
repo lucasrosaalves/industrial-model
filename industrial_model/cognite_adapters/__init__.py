@@ -34,15 +34,11 @@ class CogniteAdapter:
     ):
         self._cognite_client = cognite_client
 
-        dm = cognite_client.data_modeling.data_models.retrieve(
-            ids=data_model_id.as_tuple(),
-            inline_views=True,
-        ).latest_version()
-        view_mapper = ViewMapper(dm.views)
+        view_mapper = ViewMapper(cognite_client, data_model_id)
+        self._optmizer = QueryOptimizer(cognite_client, data_model_id)
         self._query_mapper = QueryMapper(view_mapper)
         self._result_mapper = QueryResultMapper(view_mapper)
         self._upsert_mapper = UpsertMapper(view_mapper)
-        self._optmizer = QueryOptimizer(cognite_client)
 
     def query(
         self, statement: Statement[TViewInstance], all_pages: bool
