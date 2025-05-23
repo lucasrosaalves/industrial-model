@@ -11,9 +11,14 @@ from cognite.client.data_classes.data_modeling.query import (
 )
 
 from industrial_model.config import DataModelId
-from industrial_model.models import TViewInstance, TWritableViewInstance
-from industrial_model.statements import Statement
+from industrial_model.models import (
+    AggregationResult,
+    TViewInstance,
+    TWritableViewInstance,
+)
+from industrial_model.statements import AggregationStatement, Statement
 
+from .aggregation_mapper import AggregationMapper
 from .optimizer import QueryOptimizer
 from .query_mapper import QueryMapper
 from .query_result_mapper import (
@@ -34,15 +39,12 @@ class CogniteAdapter:
     ):
         self._cognite_client = cognite_client
 
-        dm = cognite_client.data_modeling.data_models.retrieve(
-            ids=data_model_id.as_tuple(),
-            inline_views=True,
-        ).latest_version()
-        view_mapper = ViewMapper(dm.views)
+        view_mapper = ViewMapper(cognite_client, data_model_id)
+        self._optmizer = QueryOptimizer(cognite_client, data_model_id)
         self._query_mapper = QueryMapper(view_mapper)
         self._result_mapper = QueryResultMapper(view_mapper)
         self._upsert_mapper = UpsertMapper(view_mapper)
-        self._optmizer = QueryOptimizer(cognite_client)
+        self._aggregation_mapper = AggregationMapper(view_mapper)
 
     def query(
         self, statement: Statement[TViewInstance], all_pages: bool
@@ -79,6 +81,29 @@ class CogniteAdapter:
 
             if not all_pages or last_page:
                 return data, next_cursor_
+
+    def aggregate(
+        self, statement: AggregationStatement[TViewInstance]
+    ) -> list[AggregationResult]:
+        query = self._aggregation_mapper.map(statement)
+
+        result = self._cognite_client.data_modeling.instances.aggregate(
+            view=query.view.as_id(),
+            aggregates=query.metric_aggregation,
+            filter=query.filters,
+            group_by=query.group_by_columns,
+            limit=query.limit,
+        )
+
+        return [
+            AggregationResult(
+                group=item.group,
+                value=item.aggregates[0].value,
+                aggregate=statement.aggregate_,
+            )
+            for item in result
+            if item.aggregates and item.aggregates[0].value is not None
+        ]
 
     def upsert(
         self, entries: list[TWritableViewInstance], replace: bool = False
