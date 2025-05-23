@@ -1,7 +1,7 @@
 import datetime
 import json
 
-from industrial_model import col, select
+from industrial_model import aggregate, col, select
 
 from .hubs import generate_engine
 from .models import DescribableEntity, Event
@@ -17,7 +17,9 @@ if __name__ == "__main__":
         & (col(Event.start_date_time) < datetime.datetime(2025, 6, 1))
     )
 
-    statement = select(Event).limit(50).where(filter)
+    statement = (
+        select(Event).limit(2500).where(filter).asc(Event.start_date_time)
+    )
 
     result = [
         item.model_dump(mode="json")
@@ -25,3 +27,5 @@ if __name__ == "__main__":
     ]
     print(len(result))
     json.dump(result, open("entities.json", "w"), indent=2)
+
+    print(adapter.aggregate(aggregate(Event).group_by(Event.space)))

@@ -90,4 +90,10 @@ class PaginatedResult(RootModel, Generic[TViewInstance]):
     next_cursor: str | None
 
 
+class AggregationResult(RootModel):
+    group: dict[str, str | int | float | bool] | None
+    value: float
+    aggregate: str
+
+
 ValidationMode = Literal["raiseOnError", "ignoreOnError"]

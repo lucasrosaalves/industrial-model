@@ -1,5 +1,6 @@
 from .base import RootModel
 from .entities import (
+    AggregationResult,
     EdgeContainer,
     InstanceId,
     PaginatedResult,
@@ -13,6 +14,7 @@ from .entities import (
 from .schemas import get_parent_and_children_nodes, get_schema_properties
 
 __all__ = [
+    "AggregationResult",
     "RootModel",
     "EdgeContainer",
     "InstanceId",

@@ -2,12 +2,13 @@ from cognite.client import CogniteClient
 
 from industrial_model.config import DataModelId
 from industrial_model.models import (
+    AggregationResult,
     PaginatedResult,
     TViewInstance,
+    TWritableViewInstance,
     ValidationMode,
 )
-from industrial_model.models.entities import TWritableViewInstance
-from industrial_model.statements import Statement
+from industrial_model.statements import AggregationStatement, Statement
 from industrial_model.utils import run_async
 
 from .engine import Engine
@@ -36,6 +37,11 @@ class AsyncEngine:
         return await run_async(
             self._engine.query_all_pages, statement, validation_mode
         )
+
+    async def aggregate_async(
+        self, statement: AggregationStatement[TViewInstance]
+    ) -> list[AggregationResult]:
+        return await run_async(self._engine.aggregate, statement)
 
     async def upsert_async(
         self, entries: list[TWritableViewInstance], replace: bool = False
