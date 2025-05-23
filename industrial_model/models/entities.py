@@ -91,7 +91,7 @@ class PaginatedResult(RootModel, Generic[TViewInstance]):
 
 
 class AggregationResult(RootModel):
-    group: dict[str, str | int | float | bool] | None
+    group: dict[str, str | int | float | bool | InstanceId] | None
     value: float
     aggregate: str
 
