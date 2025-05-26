@@ -12,7 +12,7 @@ from cognite.client.data_classes.data_modeling.query import (
 
 from industrial_model.config import DataModelId
 from industrial_model.models import (
-    AggregationResult,
+    TAggregatedViewInstance,
     TViewInstance,
     TWritableViewInstance,
 )
@@ -83,8 +83,8 @@ class CogniteAdapter:
                 return data, next_cursor_
 
     def aggregate(
-        self, statement: AggregationStatement[TViewInstance]
-    ) -> list[AggregationResult]:
+        self, statement: AggregationStatement[TAggregatedViewInstance]
+    ) -> list[dict[str, Any]]:
         query = self._aggregation_mapper.map(statement)
 
         result = self._cognite_client.data_modeling.instances.aggregate(
@@ -94,16 +94,15 @@ class CogniteAdapter:
             group_by=query.group_by_columns,
             limit=query.limit,
         )
+        data: list[dict[str, Any]] = []
+        for item in result:
+            if not item.aggregates or item.aggregates[0].value is None:
+                continue
 
-        return [
-            AggregationResult(
-                group=item.group,
-                value=item.aggregates[0].value,
-                aggregate=statement.aggregate_,
-            )
-            for item in result
-            if item.aggregates and item.aggregates[0].value is not None
-        ]
+            entry = item.group if item.group else {}
+            entry["value"] = item.aggregates[0].value
+            data.append(entry)
+        return data
 
     def upsert(
         self, entries: list[TWritableViewInstance], replace: bool = False

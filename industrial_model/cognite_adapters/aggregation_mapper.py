@@ -1,12 +1,19 @@
 from dataclasses import dataclass
 
 import cognite.client.data_classes.filters as filters
-from cognite.client.data_classes.aggregations import Count, MetricAggregation
+from cognite.client.data_classes.aggregations import (
+    Avg,
+    Count,
+    Max,
+    MetricAggregation,
+    Min,
+    Sum,
+)
 from cognite.client.data_classes.data_modeling import (
     View,
 )
 
-from industrial_model.models import TViewInstance
+from industrial_model.models import TAggregatedViewInstance
 from industrial_model.statements import AggregationStatement
 
 from .filter_mapper import (
@@ -30,7 +37,7 @@ class AggregationMapper:
         self._filter_mapper = FilterMapper(view_mapper)
 
     def map(
-        self, statement: AggregationStatement[TViewInstance]
+        self, statement: AggregationStatement[TAggregatedViewInstance]
     ) -> AggregationQuery:
         root_node = statement.entity.get_view_external_id()
 
@@ -43,12 +50,18 @@ class AggregationMapper:
             if statement.where_clauses
             else None
         )
+        metric_aggregation: MetricAggregation | None = None
+        if statement.aggregate == "avg":
+            metric_aggregation = Avg(statement.aggregation_property.property)
+        elif statement.aggregate == "min":
+            metric_aggregation = Min(statement.aggregation_property.property)
+        elif statement.aggregate == "max":
+            metric_aggregation = Max(statement.aggregation_property.property)
+        elif statement.aggregate == "sum":
+            metric_aggregation = Sum(statement.aggregation_property.property)
+        elif statement.aggregate == "count":
+            metric_aggregation = Count(statement.aggregation_property.property)
 
-        metric_aggregation = (
-            Count(statement.aggregation_property.property)
-            if statement.aggregate_ == "count"
-            else None
-        )
         if metric_aggregation is None:
             raise ValueError(
                 f"Unsupported aggregate function: {statement.aggregate_}"
@@ -57,8 +70,6 @@ class AggregationMapper:
             view=root_view,
             metric_aggregation=metric_aggregation,
             filters=filters_,
-            group_by_columns=[
-                column.property for column in statement.group_by_columns
-            ],
+            group_by_columns=statement.entity.get_group_by_fields(),
             limit=statement.limit_,
         )

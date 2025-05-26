@@ -5,9 +5,9 @@ from cognite.client import CogniteClient
 from industrial_model.cognite_adapters import CogniteAdapter
 from industrial_model.config import DataModelId
 from industrial_model.models import (
-    AggregationResult,
     EdgeContainer,
     PaginatedResult,
+    TAggregatedViewInstance,
     TViewInstance,
     TWritableViewInstance,
     ValidationMode,
@@ -49,9 +49,11 @@ class Engine:
         return self._validate_data(statement.entity, data, validation_mode)
 
     def aggregate(
-        self, statement: AggregationStatement[TViewInstance]
-    ) -> list[AggregationResult]:
-        return self._cognite_adapter.aggregate(statement)
+        self, statement: AggregationStatement[TAggregatedViewInstance]
+    ) -> list[TAggregatedViewInstance]:
+        data = self._cognite_adapter.aggregate(statement)
+
+        return [statement.entity.model_validate(item) for item in data]
 
     def upsert(
         self, entries: list[TWritableViewInstance], replace: bool = False

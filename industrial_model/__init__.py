@@ -1,9 +1,10 @@
 from .config import DataModelId
 from .engines import AsyncEngine, Engine
 from .models import (
-    AggregationResult,
+    AggregatedViewInstance,
     InstanceId,
     PaginatedResult,
+    TAggregatedViewInstance,
     TViewInstance,
     TWritableViewInstance,
     ValidationMode,
@@ -15,7 +16,7 @@ from .statements import aggregate, and_, col, not_, or_, select
 
 __all__ = [
     "aggregate",
-    "AggregationResult",
+    "AggregatedViewInstance",
     "and_",
     "or_",
     "col",
@@ -25,6 +26,7 @@ __all__ = [
     "InstanceId",
     "TViewInstance",
     "DataModelId",
+    "TAggregatedViewInstance",
     "TWritableViewInstance",
     "ValidationMode",
     "Engine",

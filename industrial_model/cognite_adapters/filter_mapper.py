@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime
 
 import cognite.client.data_classes.filters as cdf_filters
 from cognite.client.data_classes.data_modeling import MappedProperty, View
@@ -56,6 +56,9 @@ class FilterMapper:
         value_ = expression.value
         if isinstance(value_, datetime):
             value_ = datetime_to_ms_iso_timestamp(value_)
+
+        if isinstance(value_, date):
+            value_ = value_.strftime("%Y-%m-%d")
 
         if expression.operator == "==":
             return cdf_filters.Equals(property_ref, value_)

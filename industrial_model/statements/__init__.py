@@ -63,28 +63,22 @@ class Statement(Generic[T]):
         return self
 
 
+AggregateTypes = Literal["count", "avg", "min", "max", "sum"]
+
+
 @dataclass
 class AggregationStatement(Generic[T]):
-    aggregate_: Literal["count"] = field(init=False, default="count")
+    entity: type[T] = field(init=True)
+    aggregate: AggregateTypes = field(init=True)
+
     aggregation_property: Column = field(
         init=False, default=Column("externalId")
     )
-
-    entity: type[T] = field(init=True)
-    group_by_columns: list[Column] = field(init=False, default_factory=list)
     where_clauses: list[Expression] = field(init=False, default_factory=list)
     limit_: int = field(init=False, default=-1)
 
-    def aggregate(self, aggregates: Literal["count"]) -> Self:
-        self.aggregate_ = aggregates
-        return self
-
     def aggregate_by(self, property: str | Column | Any) -> Self:
         self.aggregation_property = _create_column(property)
-        return self
-
-    def group_by(self, *property: str | Column | Any) -> Self:
-        self.group_by_columns.extend(_create_column(p) for p in property)
         return self
 
     def where(self, *expressions: bool | Expression) -> Self:
@@ -102,8 +96,11 @@ def select(entity: type[T]) -> Statement[T]:
     return Statement(entity)
 
 
-def aggregate(entity: type[T]) -> AggregationStatement[T]:
-    return AggregationStatement(entity)
+def aggregate(
+    entity: type[T],
+    aggregate: AggregateTypes = "count",
+) -> AggregationStatement[T]:
+    return AggregationStatement(entity=entity, aggregate=aggregate)
 
 
 __all__ = [

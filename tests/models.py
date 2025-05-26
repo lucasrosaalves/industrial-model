@@ -52,6 +52,15 @@ class Event(ViewInstance):
     ]
 
 
+class Msdp(ViewInstance):
+    view_config = ViewInstanceConfig(
+        view_external_id="OEEMSDP",
+        instance_spaces_prefix="OEE-",
+    )
+
+    effective_date: datetime.date
+
+
 class WritableEvent(WritableViewInstance):
     view_config = ViewInstanceConfig(
         view_external_id="OEEEvent",

@@ -30,14 +30,19 @@ from cognite.client import CogniteClient
 from pydantic import Field
 
 from industrial_model import (
+    aggregate,
+    AggregatedViewInstance,
     AsyncEngine,
     DataModelId,
     Engine,
+    InstanceId,
     ViewInstance,
-    select,
-    col,
+    ViewInstanceConfig,
+    WritableViewInstance,
     and_,
+    col,
     or_,
+    select,
 )
 
 # Define entities (view instances)
@@ -164,12 +169,10 @@ all_results = engine.query_all_pages(statement)
 
 # 7. Data Ingestion
 
-from industrial_model import (
-    WritableViewInstance  # necessary for data ingestion
-)
-
-
 class WritablePerson(WritableViewInstance):
+    view_config = ViewInstanceConfig(
+        view_external_id="Person"                    # Maps this class to the 'Person' view
+    )
     name: str
     lives_in: InstanceId
     cars: list[InstanceId]
@@ -183,10 +186,7 @@ class WritablePerson(WritableViewInstance):
             space=self.space,
         )
 
-statement = select(WritablePerson).where(
-    (WritablePerson.external_id == "Lucas") 
-)
-
+statement = select(WritablePerson).where(WritablePerson.external_id == "Lucas")
 person = engine.query_all_pages(statement)[0]
 
 person.lives_in = InstanceId(external_id="br", space="data-space")
@@ -194,7 +194,21 @@ person.cars.clear() # Gonna remove all car edges from the person
 
 engine.upsert([person])
 
-```
 
+
+# 8. Aggregate
+
+class AggregateByNamePerson(AggregatedViewInstance):
+    view_config = ViewInstanceConfig(
+        view_external_id="Person"  # Maps this class to the 'Person' view
+    )
+
+    name: str  # group by name
+
+
+aggregate_result = engine.aggregate(aggregate(AggregateByNamePerson, "count"))
+
+
+```
 
 ---

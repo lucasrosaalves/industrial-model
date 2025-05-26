@@ -1,9 +1,10 @@
 from .base import RootModel
 from .entities import (
-    AggregationResult,
+    AggregatedViewInstance,
     EdgeContainer,
     InstanceId,
     PaginatedResult,
+    TAggregatedViewInstance,
     TViewInstance,
     TWritableViewInstance,
     ValidationMode,
@@ -14,10 +15,11 @@ from .entities import (
 from .schemas import get_parent_and_children_nodes, get_schema_properties
 
 __all__ = [
-    "AggregationResult",
+    "AggregatedViewInstance",
     "RootModel",
     "EdgeContainer",
     "InstanceId",
+    "TAggregatedViewInstance",
     "TViewInstance",
     "TWritableViewInstance",
     "ViewInstance",

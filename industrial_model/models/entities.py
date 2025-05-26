@@ -56,17 +56,6 @@ class ViewInstance(InstanceId, metaclass=DBModelMetaclass):
     def get_view_external_id(cls) -> str:
         return cls.view_config.get("view_external_id") or cls.__name__
 
-    def get_field_name(self, field_name_or_alias: str) -> str | None:
-        entry = self.__class__.model_fields.get(field_name_or_alias)
-        if entry:
-            return field_name_or_alias
-
-        for key, field_info in self.__class__.model_fields.items():
-            if field_info.alias == field_name_or_alias:
-                return key
-
-        return None
-
 
 class WritableViewInstance(ViewInstance):
     @abstractmethod
@@ -78,9 +67,32 @@ class WritableViewInstance(ViewInstance):
         )
 
 
+class AggregatedViewInstance(RootModel, metaclass=DBModelMetaclass):
+    view_config: ClassVar[ViewInstanceConfig] = ViewInstanceConfig()
+
+    value: float
+
+    @classmethod
+    def get_view_external_id(cls) -> str:
+        return cls.view_config.get("view_external_id") or cls.__name__
+
+    @classmethod
+    def get_group_by_fields(cls) -> list[str]:
+        group_by_fields: set[str] = set()
+        for key, field_info in cls.model_fields.items():
+            if key == "value":
+                continue
+            group_by_fields.add(field_info.alias or key)
+
+        return list(group_by_fields)
+
+
 TViewInstance = TypeVar("TViewInstance", bound=ViewInstance)
 TWritableViewInstance = TypeVar(
     "TWritableViewInstance", bound=WritableViewInstance
+)
+TAggregatedViewInstance = TypeVar(
+    "TAggregatedViewInstance", bound=AggregatedViewInstance
 )
 
 
@@ -88,12 +100,6 @@ class PaginatedResult(RootModel, Generic[TViewInstance]):
     data: list[TViewInstance]
     has_next_page: bool
     next_cursor: str | None
-
-
-class AggregationResult(RootModel):
-    group: dict[str, str | int | float | bool | InstanceId] | None
-    value: float
-    aggregate: str
 
 
 ValidationMode = Literal["raiseOnError", "ignoreOnError"]

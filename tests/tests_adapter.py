@@ -1,10 +1,10 @@
 import datetime
 import json
 
-from industrial_model import aggregate, col, select
+from industrial_model import col, select
 
 from .hubs import generate_engine
-from .models import DescribableEntity, Event
+from .models import DescribableEntity, Event, Msdp
 
 if __name__ == "__main__":
     adapter = generate_engine()
@@ -26,6 +26,17 @@ if __name__ == "__main__":
         for item in adapter.query_all_pages(statement)
     ]
     print(len(result))
-    json.dump(result, open("entities.json", "w"), indent=2)
+    json.dump(result, open("events.json", "w"), indent=2)
 
-    print(adapter.aggregate(aggregate(Event).group_by(Event.space)))
+    statement_msdp = (
+        select(Msdp)
+        .limit(2500)
+        .where(Msdp.effective_date >= datetime.date(2022, 5, 1))
+    )
+
+    result_msdp = [
+        item.model_dump(mode="json")
+        for item in adapter.query_all_pages(statement_msdp)
+    ]
+    print(len(result_msdp))
+    json.dump(result_msdp, open("msdp.json", "w"), indent=2)
