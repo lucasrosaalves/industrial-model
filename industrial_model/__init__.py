@@ -4,6 +4,7 @@ from .models import (
     AggregatedViewInstance,
     InstanceId,
     PaginatedResult,
+    RootModel,
     TAggregatedViewInstance,
     TViewInstance,
     TWritableViewInstance,
@@ -32,6 +33,7 @@ __all__ = [
     "Engine",
     "AsyncEngine",
     "PaginatedResult",
+    "RootModel",
     "ViewInstanceConfig",
     "WritableViewInstance",
 ]
