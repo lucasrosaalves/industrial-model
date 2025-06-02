@@ -1,5 +1,6 @@
 from collections import defaultdict
-from typing import Any, TypedDict
+from enum import StrEnum
+from typing import Any, Literal, TypedDict
 
 from cognite.client.data_classes.data_modeling import (
     Edge,
@@ -19,8 +20,15 @@ from industrial_model.models import EdgeContainer
 from .view_mapper import ViewMapper
 
 
+class ConnectionTypeEnum(StrEnum):
+    DIRECT_RELATION = "DirectRelation"
+    REVERSE_DIRECT_RELATION = "ReverseDirectRelation"
+    EDGE = "Edge"
+
+
 class _PropertyMapping(TypedDict):
     is_list: bool
+    connection_type: ConnectionTypeEnum
     nodes: dict[tuple[str, str], list[Node]]
     edges: dict[tuple[str, str], list[Edge]]
 
@@ -92,15 +100,25 @@ class QueryResultMapper:
             for mapping_key, mapping_value in mappings.items():
                 element = properties.get(mapping_key)
 
+                mapping_nodes = mapping_value.get("nodes", {})
+                mapping_edges = mapping_value.get("edges", {})
+                is_list = mapping_value.get("is_list", False)
+                connection_type = mapping_value.get(
+                    "connection_type",
+                    ConnectionTypeEnum.DIRECT_RELATION,
+                )
+
+                if (
+                    element is None
+                    and connection_type == ConnectionTypeEnum.DIRECT_RELATION
+                ):
+                    continue
+
                 element_key: tuple[str, str] = (
                     (element.get("space", ""), element.get("externalId", ""))
                     if isinstance(element, dict)
                     else (node.space, node.external_id)
                 )
-
-                mapping_nodes = mapping_value.get("nodes", {})
-                mapping_edges = mapping_value.get("edges", {})
-                is_list = mapping_value.get("is_list", False)
 
                 node_entries = mapping_nodes.get(element_key)
                 if not node_entries:
@@ -116,6 +134,7 @@ class QueryResultMapper:
                         edge_entries
                     )
             properties["_edges"] = edges_mapping
+
             node.properties[view_id] = properties
 
             result[node_id].append(node)
@@ -136,6 +155,9 @@ class QueryResultMapper:
             nodes: dict[tuple[str, str], list[Node]] | None = None
             edges: dict[tuple[str, str], list[Edge]] | None = None
             is_list = False
+            connection_type: ConnectionTypeEnum = (
+                ConnectionTypeEnum.DIRECT_RELATION
+            )
 
             if isinstance(property, MappedProperty) and property.source:
                 nodes = self._map_node_property(
@@ -144,6 +166,7 @@ class QueryResultMapper:
                     query_result,
                 )
                 is_list = False
+                connection_type = ConnectionTypeEnum.DIRECT_RELATION
             elif (
                 isinstance(property, SingleReverseDirectRelation)
                 and property.source
@@ -155,6 +178,7 @@ class QueryResultMapper:
                     property.through.property,
                 )
                 is_list = False
+                connection_type = ConnectionTypeEnum.REVERSE_DIRECT_RELATION
             elif (
                 isinstance(property, MultiReverseDirectRelation)
                 and property.source
@@ -166,6 +190,7 @@ class QueryResultMapper:
                     property.through.property,
                 )
                 is_list = True
+                connection_type = ConnectionTypeEnum.REVERSE_DIRECT_RELATION
 
             elif isinstance(property, EdgeConnection) and property.source:
                 nodes, edges = self._map_edge_property(
@@ -175,10 +200,14 @@ class QueryResultMapper:
                     property.direction,
                 )
                 is_list = True
+                connection_type = ConnectionTypeEnum.EDGE
 
             if nodes:
                 mappings[property_name] = _PropertyMapping(
-                    is_list=is_list, nodes=nodes, edges=edges or {}
+                    is_list=is_list,
+                    connection_type=connection_type,
+                    nodes=nodes,
+                    edges=edges or {},
                 )
 
         return mappings
