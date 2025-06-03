@@ -101,5 +101,8 @@ class PaginatedResult(RootModel, Generic[TViewInstance]):
     has_next_page: bool
     next_cursor: str | None
 
+    def first_or_default(self) -> TViewInstance | None:
+        return self.data[0] if self.data else None
+
 
 ValidationMode = Literal["raiseOnError", "ignoreOnError"]

@@ -1,6 +1,6 @@
 [project]
 name = "industrial-model"
-version = "0.1.17"
+version = "0.1.18"
 description = "Industrial Model ORM"
 readme = "README.md"
 requires-python = ">=3.11"
