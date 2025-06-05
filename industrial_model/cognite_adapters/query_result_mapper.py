@@ -1,6 +1,6 @@
 from collections import defaultdict
 from enum import StrEnum
-from typing import Any, Literal, TypedDict
+from typing import Any, TypedDict
 
 from cognite.client.data_classes.data_modeling import (
     Edge,

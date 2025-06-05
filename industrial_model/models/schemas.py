@@ -99,7 +99,7 @@ def _get_field_type(
     entries: list[type[BaseModel] | None] = []
     for arg in get_args(type_hint):
         if _type_is_list_or_union(arg):
-            return _get_field_type(arg, visited_count)
+            return _get_field_type(arg, parent_type, visited_count)
         entries.append(_cast_base_model(arg))
 
     return _get_field_relations(entries, parent_type, visited_count)

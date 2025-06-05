@@ -111,7 +111,7 @@ class CogniteAdapter:
         operation = self._upsert_mapper.map(entries)
 
         for node_chunk in operation.chunk_nodes():
-            logger.info(
+            logger.debug(
                 f"Upserting {len(node_chunk)} nodes (replace={replace})"
             )
             self._cognite_client.data_modeling.instances.apply(
@@ -120,7 +120,7 @@ class CogniteAdapter:
             )
 
         for edge_chunk in operation.chunk_edges():
-            logger.info(
+            logger.debug(
                 f"Upserting {len(edge_chunk)} edges (replace={replace})"
             )
             self._cognite_client.data_modeling.instances.apply(
@@ -129,10 +129,15 @@ class CogniteAdapter:
             )
 
         for edges_to_remove_chunk in operation.chunk_edges_to_delete():
-            logger.info(f"Deleting {len(edges_to_remove_chunk)} edges")
+            logger.debug(f"Deleting {len(edges_to_remove_chunk)} edges")
             self._cognite_client.data_modeling.instances.delete(
                 edges=[item.as_tuple() for item in edges_to_remove_chunk],
             )
+
+    def delete(self, nodes: list[TViewInstance]) -> None:
+        self._cognite_client.data_modeling.instances.delete(
+            nodes=[item.as_tuple() for item in nodes],
+        )
 
     def _query_dependencies_pages(
         self,

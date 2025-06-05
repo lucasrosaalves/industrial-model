@@ -63,6 +63,11 @@ class Engine:
 
         return self._cognite_adapter.upsert(entries, replace)
 
+    def delete(self, nodes: list[TViewInstance]) -> None:
+        self._cognite_adapter.delete(
+            nodes,
+        )
+
     def _validate_data(
         self,
         entity: type[TViewInstance],

@@ -47,3 +47,6 @@ class AsyncEngine:
         self, entries: list[TWritableViewInstance], replace: bool = False
     ) -> None:
         return await run_async(self._engine.upsert, entries, replace)
+
+    async def delete_async(self, nodes: list[TViewInstance]) -> None:
+        return await run_async(self._engine.delete, nodes)

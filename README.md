@@ -209,6 +209,22 @@ class AggregateByNamePerson(AggregatedViewInstance):
 aggregate_result = engine.aggregate(aggregate(AggregateByNamePerson, "count"))
 
 
+
+# 9. Deletion
+
+class Entity(ViewInstance):
+    view_config = ViewInstanceConfig(
+        view_external_id="Person"
+    )
+    name: str
+
+
+statement = select(Entity).where(Entity.external_id == "Lucas")
+person = engine.query_all_pages(statement)[0]
+
+
+engine.delete([person])
+
 ```
 
 ---
