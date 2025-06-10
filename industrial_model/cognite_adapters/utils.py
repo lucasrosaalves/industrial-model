@@ -142,6 +142,7 @@ def _get_leaf_cursors(
             cursor_key == view_external_id
             or not cursor_value
             or len(query_result[cursor_key]) != MAX_LIMIT
+            or cursor_key not in nodes_children
         ):
             continue
 

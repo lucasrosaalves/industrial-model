@@ -26,7 +26,7 @@ class SuperNestedModel(DescribableEntity):
     cars: list[_Car] | None
 
 
-def test_get_schema_properties():
+def test_get_schema_properties() -> None:
     for entity, expected_schema in _get_test_schema().items():
         schema = get_schema_properties(entity, SEP)
         assert schema == expected_schema, (
