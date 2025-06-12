@@ -43,6 +43,7 @@ from industrial_model import (
     col,
     or_,
     select,
+    search,
 )
 
 # Define entities (view instances)
@@ -224,6 +225,20 @@ person = engine.query_all_pages(statement)[0]
 
 
 engine.delete([person])
+
+
+# 10. Search
+
+class Entity(ViewInstance):
+    view_config = ViewInstanceConfig(
+        view_external_id="Person"
+    )
+    name: str
+
+
+statement = search(Entity).query_by("Lucas", [Entity.name])
+person = engine.search(statement)
+
 
 ```
 

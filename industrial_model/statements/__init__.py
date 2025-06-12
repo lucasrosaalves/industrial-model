@@ -15,6 +15,7 @@ from .expressions import (
 )
 
 T = TypeVar("T")
+AggregateTypes = Literal["count", "avg", "min", "max", "sum"]
 
 
 def _create_column(property: str | Column | Any) -> Column:
@@ -22,19 +23,22 @@ def _create_column(property: str | Column | Any) -> Column:
 
 
 @dataclass
-class Statement(Generic[T]):
+class BaseStatement(Generic[T]):
     entity: type[T] = field(init=True)
     where_clauses: list[Expression] = field(init=False, default_factory=list)
     sort_clauses: list[tuple[Column, SORT_DIRECTION]] = field(
         init=False, default_factory=list
     )
     limit_: int = field(init=False, default=DEFAULT_LIMIT)
-    cursor_: str | None = field(init=False, default=None)
 
     def where(self, *expressions: bool | Expression) -> Self:
         for expression in expressions:
             assert isinstance(expression, Expression)
             self.where_clauses.append(expression)
+        return self
+
+    def limit(self, limit: int) -> Self:
+        self.limit_ = limit
         return self
 
     def asc(self, property: str | Column | Any) -> Self:
@@ -54,16 +58,40 @@ class Statement(Generic[T]):
         )
         return self
 
-    def limit(self, limit: int) -> Self:
-        self.limit_ = limit
-        return self
+
+@dataclass
+class Statement(BaseStatement[T]):
+    cursor_: str | None = field(init=False, default=None)
 
     def cursor(self, cursor: str | None) -> Self:
         self.cursor_ = cursor
         return self
 
 
-AggregateTypes = Literal["count", "avg", "min", "max", "sum"]
+@dataclass
+class SearchStatement(BaseStatement[T]):
+    query: str | None = field(init=False, default=None)
+    query_properties: list[str] | None = field(init=False, default=None)
+
+    def query_by(
+        self,
+        query: str,
+        query_properties: list[Column | str | Any] | None = None,
+    ) -> Self:
+        self.query = query
+        self.query_properties = (
+            [
+                prop
+                if isinstance(prop, str)
+                else prop.property
+                if isinstance(prop, Column)
+                else str(prop)
+                for prop in query_properties
+            ]
+            if query_properties
+            else None
+        )
+        return self
 
 
 @dataclass
@@ -103,11 +131,17 @@ def aggregate(
     return AggregationStatement(entity=entity, aggregate=aggregate)
 
 
+def search(entity: type[T]) -> SearchStatement[T]:
+    return SearchStatement(entity)
+
+
 __all__ = [
     "aggregate",
     "AggregationStatement",
     "Statement",
     "select",
+    "search",
+    "SearchStatement",
     "Column",
     "col",
     "Expression",

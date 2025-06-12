@@ -8,7 +8,11 @@ from industrial_model.models import (
     TWritableViewInstance,
     ValidationMode,
 )
-from industrial_model.statements import AggregationStatement, Statement
+from industrial_model.statements import (
+    AggregationStatement,
+    SearchStatement,
+    Statement,
+)
 from industrial_model.utils import run_async
 
 from .engine import Engine
@@ -21,6 +25,13 @@ class AsyncEngine:
         data_model_id: DataModelId,
     ):
         self._engine = Engine(cognite_client, data_model_id)
+
+    async def search_async(
+        self,
+        statement: SearchStatement[TViewInstance],
+        validation_mode: ValidationMode = "raiseOnError",
+    ) -> list[TViewInstance]:
+        return await run_async(self._engine.search, statement, validation_mode)
 
     async def query_async(
         self,

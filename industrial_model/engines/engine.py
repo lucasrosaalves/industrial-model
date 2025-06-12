@@ -12,7 +12,11 @@ from industrial_model.models import (
     TWritableViewInstance,
     ValidationMode,
 )
-from industrial_model.statements import AggregationStatement, Statement
+from industrial_model.statements import (
+    AggregationStatement,
+    SearchStatement,
+    Statement,
+)
 
 
 class Engine:
@@ -22,6 +26,14 @@ class Engine:
         data_model_id: DataModelId,
     ):
         self._cognite_adapter = CogniteAdapter(cognite_client, data_model_id)
+
+    def search(
+        self,
+        statement: SearchStatement[TViewInstance],
+        validation_mode: ValidationMode = "raiseOnError",
+    ) -> list[TViewInstance]:
+        data = self._cognite_adapter.search(statement)
+        return self._validate_data(statement.entity, data, validation_mode)
 
     def query(
         self,

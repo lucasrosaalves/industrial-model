@@ -7,6 +7,7 @@ from cognite.client.data_classes.data_modeling import (
     EdgeConnection,
     MappedProperty,
     Node,
+    NodeList,
     View,
 )
 from cognite.client.data_classes.data_modeling.views import (
@@ -54,10 +55,15 @@ class QueryResultMapper:
         data = [
             node
             for nodes in values.values()
-            for node in self._nodes_to_dict(nodes)
+            for node in self.nodes_to_dict(nodes)
         ]
 
         return data
+
+    def nodes_to_dict(
+        self, nodes: list[Node] | NodeList[Node]
+    ) -> list[dict[str, Any]]:
+        return [self._node_to_dict(node) for node in nodes]
 
     def _map_node_property(
         self,
@@ -124,7 +130,7 @@ class QueryResultMapper:
                 if not node_entries:
                     continue
 
-                entry_data = self._nodes_to_dict(node_entries)
+                entry_data = self.nodes_to_dict(node_entries)
                 properties[mapping_key] = (
                     entry_data if is_list else entry_data[0]
                 )
@@ -256,9 +262,6 @@ class QueryResultMapper:
                 nodes_result[entry_key].extend(node_item)
 
         return dict(nodes_result), dict(edges_result)
-
-    def _nodes_to_dict(self, nodes: list[Node]) -> list[dict[str, Any]]:
-        return [self._node_to_dict(node) for node in nodes]
 
     def _edges_to_model(self, edges: list[Edge]) -> list[EdgeContainer]:
         return [EdgeContainer.model_validate(edge) for edge in edges]

@@ -52,6 +52,14 @@ class Event(ViewInstance):
     ]
 
 
+class SearchEvent(ViewInstance):
+    view_config = ViewInstanceConfig(view_external_id="OEEEvent")
+
+    start_date_time: datetime.datetime
+    event_definition: str
+    ref_site: InstanceId
+
+
 class Msdp(ViewInstance):
     view_config = ViewInstanceConfig(
         view_external_id="OEEMSDP",

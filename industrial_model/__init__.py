@@ -13,7 +13,7 @@ from .models import (
     ViewInstanceConfig,
     WritableViewInstance,
 )
-from .statements import aggregate, and_, col, not_, or_, select
+from .statements import aggregate, and_, col, not_, or_, search, select
 
 __all__ = [
     "aggregate",
@@ -23,6 +23,7 @@ __all__ = [
     "col",
     "not_",
     "select",
+    "search",
     "ViewInstance",
     "InstanceId",
     "TViewInstance",

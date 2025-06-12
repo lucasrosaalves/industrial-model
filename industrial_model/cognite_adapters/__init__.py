@@ -16,7 +16,11 @@ from industrial_model.models import (
     TViewInstance,
     TWritableViewInstance,
 )
-from industrial_model.statements import AggregationStatement, Statement
+from industrial_model.statements import (
+    AggregationStatement,
+    SearchStatement,
+    Statement,
+)
 
 from .aggregation_mapper import AggregationMapper
 from .optimizer import QueryOptimizer
@@ -24,6 +28,7 @@ from .query_mapper import QueryMapper
 from .query_result_mapper import (
     QueryResultMapper,
 )
+from .search_mapper import SearchMapper
 from .upsert_mapper import UpsertMapper
 from .utils import (
     append_nodes_and_edges,
@@ -45,6 +50,22 @@ class CogniteAdapter:
         self._result_mapper = QueryResultMapper(view_mapper)
         self._upsert_mapper = UpsertMapper(view_mapper)
         self._aggregation_mapper = AggregationMapper(view_mapper)
+        self._search_mapper = SearchMapper(view_mapper)
+
+    def search(
+        self, statement: SearchStatement[TViewInstance]
+    ) -> list[dict[str, Any]]:
+        search_query = self._search_mapper.map(statement)
+        data = self._cognite_client.data_modeling.instances.search(
+            view=search_query.view.as_id(),
+            query=search_query.query,
+            filter=search_query.filter,
+            properties=search_query.query_properties,
+            limit=search_query.limit,
+            sort=search_query.sort,
+        )
+
+        return self._result_mapper.nodes_to_dict(data)
 
     def query(
         self, statement: Statement[TViewInstance], all_pages: bool
