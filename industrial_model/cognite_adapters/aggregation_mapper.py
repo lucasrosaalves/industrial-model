@@ -44,9 +44,7 @@ class AggregationMapper:
         root_view = self._view_mapper.get_view(root_node)
 
         filters_ = (
-            filters.And(
-                *self._filter_mapper.map(statement.where_clauses, root_view)
-            )
+            filters.And(*self._filter_mapper.map(statement.where_clauses, root_view))
             if statement.where_clauses
             else None
         )
@@ -63,9 +61,7 @@ class AggregationMapper:
             metric_aggregation = Count(statement.aggregation_property.property)
 
         if metric_aggregation is None:
-            raise ValueError(
-                f"Unsupported aggregate function: {statement.aggregate_}"
-            )
+            raise ValueError(f"Unsupported aggregate function: {statement.aggregate_}")
         return AggregationQuery(
             view=root_view,
             metric_aggregation=metric_aggregation,

@@ -43,9 +43,7 @@ def get_property_ref(
 def get_cognite_instance_ids(
     instance_ids: list[TViewInstance],
 ) -> list[dict[str, str]]:
-    return [
-        get_cognite_instance_id(instance_id) for instance_id in instance_ids
-    ]
+    return [get_cognite_instance_id(instance_id) for instance_id in instance_ids]
 
 
 def get_cognite_instance_id(instance_id: TViewInstance) -> dict[str, str]:
@@ -115,9 +113,7 @@ def _create_query(
         valid_keys = parent.union(children)
         valid_keys.add(cursor_key)
 
-        with_.update(
-            {k: v for k, v in previous_query.with_.items() if k in valid_keys}
-        )
+        with_.update({k: v for k, v in previous_query.with_.items() if k in valid_keys})
         select_.update(
             {k: v for k, v in previous_query.select.items() if k in valid_keys}
         )

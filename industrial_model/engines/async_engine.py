@@ -51,9 +51,7 @@ class AsyncEngine:
         statement: Statement[TViewInstance],
         validation_mode: ValidationMode = "raiseOnError",
     ) -> list[TViewInstance]:
-        return await run_async(
-            self._engine.query_all_pages, statement, validation_mode
-        )
+        return await run_async(self._engine.query_all_pages, statement, validation_mode)
 
     async def aggregate_async(
         self, statement: AggregationStatement[TAggregatedViewInstance]

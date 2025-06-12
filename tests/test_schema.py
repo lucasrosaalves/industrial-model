@@ -29,9 +29,7 @@ class SuperNestedModel(DescribableEntity):
 def test_get_schema_properties() -> None:
     for entity, expected_schema in _get_test_schema().items():
         schema = get_schema_properties(entity, SEP)
-        assert schema == expected_schema, (
-            f"Expected {expected_schema}, got {schema}"
-        )
+        assert schema == expected_schema, f"Expected {expected_schema}, got {schema}"
 
 
 def _get_test_schema() -> dict[type[BaseModel], list[str]]:

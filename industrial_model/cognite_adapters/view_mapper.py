@@ -9,9 +9,7 @@ from industrial_model.config import DataModelId
 
 
 class ViewMapper:
-    def __init__(
-        self, cognite_client: CogniteClient, data_model_id: DataModelId
-    ):
+    def __init__(self, cognite_client: CogniteClient, data_model_id: DataModelId):
         self._cognite_client = cognite_client
         self._data_model_id = data_model_id
         self._views_as_dict: dict[str, View] | None = None
@@ -26,9 +24,7 @@ class ViewMapper:
     def get_view(self, view_external_id: str) -> View:
         views = self._load_views()
         if view_external_id not in views:
-            raise ValueError(
-                f"View {view_external_id} is not available in data model"
-            )
+            raise ValueError(f"View {view_external_id} is not available in data model")
 
         return views[view_external_id]
 

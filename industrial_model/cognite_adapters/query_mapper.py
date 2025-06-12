@@ -43,13 +43,9 @@ class QueryMapper:
         root_view = self._view_mapper.get_view(root_node)
         root_view_id = root_view.as_id()
 
-        filters_: list[filters.Filter] = [
-            filters.HasData(views=[root_view_id])
-        ]
+        filters_: list[filters.Filter] = [filters.HasData(views=[root_view_id])]
 
-        filters_.extend(
-            self._filter_mapper.map(statement.where_clauses, root_view)
-        )
+        filters_.extend(self._filter_mapper.map(statement.where_clauses, root_view))
 
         with_: dict[str, ResultSetExpression] = {
             root_node: NodeResultSetExpression(
@@ -60,9 +56,7 @@ class QueryMapper:
         }
         select_: dict[str, Select] = {}
 
-        relations = get_schema_properties(
-            statement.entity, NESTED_SEP, root_node
-        )
+        relations = get_schema_properties(statement.entity, NESTED_SEP, root_node)
 
         properties = self._include_statements(
             root_node, root_view, relations, with_, select_
@@ -76,9 +70,7 @@ class QueryMapper:
 
     def _get_select(self, view_id: ViewId, properties: list[str]) -> Select:
         return (
-            Select(
-                sources=[SourceSelector(source=view_id, properties=properties)]
-            )
+            Select(sources=[SourceSelector(source=view_id, properties=properties)])
             if properties
             else Select()
         )
@@ -118,9 +110,7 @@ class QueryMapper:
                         through=view.as_property_ref(property_name),
                         limit=MAX_LIMIT,
                     )
-                    select_[property_key] = self._get_select(
-                        property.source, props
-                    )
+                    select_[property_key] = self._get_select(property.source, props)
 
             elif (
                 isinstance(property, MultiReverseDirectRelation)
@@ -138,27 +128,21 @@ class QueryMapper:
                 with_[property_key] = NodeResultSetExpression(
                     from_=key,
                     direction="inwards",
-                    through=property.source.as_property_ref(
-                        property.through.property
-                    ),
+                    through=property.source.as_property_ref(property.through.property),
                     limit=MAX_LIMIT,
                 )
 
                 if property.through.property not in props:
                     props.append(property.through.property)
 
-                select_[property_key] = self._get_select(
-                    property.source, props
-                )
+                select_[property_key] = self._get_select(property.source, props)
             elif isinstance(property, EdgeConnection) and property.source:
                 edge_property_key = f"{property_key}{NESTED_SEP}{EDGE_MARKER}"
 
                 with_[edge_property_key] = EdgeResultSetExpression(
                     from_=key,
                     max_distance=1,
-                    filter=filters.Equals(
-                        ["edge", "type"], property.type.dump()
-                    ),
+                    filter=filters.Equals(["edge", "type"], property.type.dump()),
                     direction=property.direction,
                     limit=MAX_LIMIT,
                 )
@@ -176,8 +160,6 @@ class QueryMapper:
                     with_,
                     select_,
                 )
-                select_[property_key] = self._get_select(
-                    property.source, props
-                )
+                select_[property_key] = self._get_select(property.source, props)
 
         return select_properties

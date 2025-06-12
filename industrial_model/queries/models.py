@@ -5,9 +5,7 @@ from .params import NestedQueryParam, QueryParam, SortParam
 
 
 class BaseQuery(RootModel):
-    def to_statement(
-        self, entity: type[TViewInstance]
-    ) -> Statement[TViewInstance]:
+    def to_statement(self, entity: type[TViewInstance]) -> Statement[TViewInstance]:
         statement = Statement(entity)
 
         for key, item in self.__class__.model_fields.items():
@@ -27,9 +25,7 @@ class BasePaginatedQuery(BaseQuery):
     limit: int = 1000
     cursor: str | None = None
 
-    def to_statement(
-        self, entity: type[TViewInstance]
-    ) -> Statement[TViewInstance]:
+    def to_statement(self, entity: type[TViewInstance]) -> Statement[TViewInstance]:
         statement = super().to_statement(entity)
         statement.limit(self.limit)
         statement.cursor(self.cursor)

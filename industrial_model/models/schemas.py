@@ -38,8 +38,7 @@ def get_parent_and_children_nodes(
     for key in keys:
         key_parts = key.split(NESTED_SEP)
         parent_paths = {
-            NESTED_SEP.join(key_parts[:i])
-            for i in range(len(key_parts) - 1, 0, -1)
+            NESTED_SEP.join(key_parts[:i]) for i in range(len(key_parts) - 1, 0, -1)
         }
 
         valid_paths: set[str] = set()
@@ -142,17 +141,13 @@ def _flatten_dict_keys(
 ) -> list[str]:
     paths: set[str] = set()
     for key, value in data.items():
-        full_key = (
-            f"{parent_key}{nested_separator}{key}" if parent_key else key
-        )
+        full_key = f"{parent_key}{nested_separator}{key}" if parent_key else key
         paths.add(full_key)
         if isinstance(value, dict) and value:
             paths.update(_flatten_dict_keys(value, full_key, nested_separator))
         elif isinstance(value, str):
             paths.add(f"{full_key}{nested_separator}{value}")
         elif isinstance(value, list | set):
-            paths.update(
-                [f"{full_key}{nested_separator}{item}" for item in value]
-            )
+            paths.update([f"{full_key}{nested_separator}{item}" for item in value])
 
     return sorted(paths)

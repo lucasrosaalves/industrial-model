@@ -42,9 +42,7 @@ class QueryResultMapper:
         self, root_node: str, query_result: dict[str, list[Node | Edge]]
     ) -> list[dict[str, Any]]:
         if root_node not in query_result:
-            raise ValueError(
-                f"{root_node} is not available in the query result"
-            )
+            raise ValueError(f"{root_node} is not available in the query result")
 
         root_view = self._view_mapper.get_view(root_node)
 
@@ -52,17 +50,11 @@ class QueryResultMapper:
         if not values:
             return []
 
-        data = [
-            node
-            for nodes in values.values()
-            for node in self.nodes_to_dict(nodes)
-        ]
+        data = [node for nodes in values.values() for node in self.nodes_to_dict(nodes)]
 
         return data
 
-    def nodes_to_dict(
-        self, nodes: list[Node] | NodeList[Node]
-    ) -> list[dict[str, Any]]:
+    def nodes_to_dict(self, nodes: list[Node] | NodeList[Node]) -> list[dict[str, Any]]:
         return [self._node_to_dict(node) for node in nodes]
 
     def _map_node_property(
@@ -85,9 +77,7 @@ class QueryResultMapper:
 
             entry = properties.get(result_property_key)
             if not isinstance(entry, dict):
-                raise ValueError(
-                    f"Invalid result property key {result_property_key}"
-                )
+                raise ValueError(f"Invalid result property key {result_property_key}")
 
             return entry.get("space", ""), entry.get("externalId", "")
 
@@ -131,14 +121,10 @@ class QueryResultMapper:
                     continue
 
                 entry_data = self.nodes_to_dict(node_entries)
-                properties[mapping_key] = (
-                    entry_data if is_list else entry_data[0]
-                )
+                properties[mapping_key] = entry_data if is_list else entry_data[0]
                 edge_entries = mapping_edges.get(element_key)
                 if edge_entries:
-                    edges_mapping[mapping_key] = self._edges_to_model(
-                        edge_entries
-                    )
+                    edges_mapping[mapping_key] = self._edges_to_model(edge_entries)
             properties["_edges"] = edges_mapping
 
             node.properties[view_id] = properties
@@ -161,9 +147,7 @@ class QueryResultMapper:
             nodes: dict[tuple[str, str], list[Node]] | None = None
             edges: dict[tuple[str, str], list[Edge]] | None = None
             is_list = False
-            connection_type: ConnectionTypeEnum = (
-                ConnectionTypeEnum.DIRECT_RELATION
-            )
+            connection_type: ConnectionTypeEnum = ConnectionTypeEnum.DIRECT_RELATION
 
             if isinstance(property, MappedProperty) and property.source:
                 nodes = self._map_node_property(
@@ -173,10 +157,7 @@ class QueryResultMapper:
                 )
                 is_list = False
                 connection_type = ConnectionTypeEnum.DIRECT_RELATION
-            elif (
-                isinstance(property, SingleReverseDirectRelation)
-                and property.source
-            ):
+            elif isinstance(property, SingleReverseDirectRelation) and property.source:
                 nodes = self._map_node_property(
                     property_key,
                     self._view_mapper.get_view(property.source.external_id),
@@ -185,10 +166,7 @@ class QueryResultMapper:
                 )
                 is_list = False
                 connection_type = ConnectionTypeEnum.REVERSE_DIRECT_RELATION
-            elif (
-                isinstance(property, MultiReverseDirectRelation)
-                and property.source
-            ):
+            elif isinstance(property, MultiReverseDirectRelation) and property.source:
                 nodes = self._map_node_property(
                     property_key,
                     self._view_mapper.get_view(property.source.external_id),
@@ -237,12 +215,8 @@ class QueryResultMapper:
             return None, None
 
         visited: set[tuple[str, str]] = set()
-        nodes_result: defaultdict[tuple[str, str], list[Node]] = defaultdict(
-            list
-        )
-        edges_result: defaultdict[tuple[str, str], list[Edge]] = defaultdict(
-            list
-        )
+        nodes_result: defaultdict[tuple[str, str], list[Node]] = defaultdict(list)
+        edges_result: defaultdict[tuple[str, str], list[Edge]] = defaultdict(list)
         for edge in query_result[edge_key]:
             identify = (edge.space, edge.external_id)
             if not isinstance(edge, Edge) or identify in visited:
@@ -268,9 +242,7 @@ class QueryResultMapper:
 
     def _node_to_dict(self, node: Node) -> dict[str, Any]:
         entry = node.dump()
-        properties: dict[str, dict[str, dict[str, Any]]] = (
-            entry.pop("properties") or {}
-        )
+        properties: dict[str, dict[str, dict[str, Any]]] = entry.pop("properties") or {}
         for space_mapping in properties.values():
             for view_mapping in space_mapping.values():
                 entry.update(view_mapping)

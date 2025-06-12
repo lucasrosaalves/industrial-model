@@ -88,9 +88,7 @@ class AggregatedViewInstance(RootModel, metaclass=DBModelMetaclass):
 
 
 TViewInstance = TypeVar("TViewInstance", bound=ViewInstance)
-TWritableViewInstance = TypeVar(
-    "TWritableViewInstance", bound=WritableViewInstance
-)
+TWritableViewInstance = TypeVar("TWritableViewInstance", bound=WritableViewInstance)
 TAggregatedViewInstance = TypeVar(
     "TAggregatedViewInstance", bound=AggregatedViewInstance
 )

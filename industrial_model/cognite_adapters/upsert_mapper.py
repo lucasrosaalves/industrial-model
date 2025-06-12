@@ -31,19 +31,14 @@ class UpsertMapper:
         edges_to_delete: dict[tuple[str, str], EdgeContainer] = {}
 
         for instance in instances:
-            entry_nodes, entry_edges, entry_edges_to_delete = (
-                self._map_instance(instance)
+            entry_nodes, entry_edges, entry_edges_to_delete = self._map_instance(
+                instance
             )
 
             nodes[instance.as_tuple()] = entry_nodes
-            edges.update(
-                {(item.space, item.external_id): item for item in entry_edges}
-            )
+            edges.update({(item.space, item.external_id): item for item in entry_edges})
             edges_to_delete.update(
-                {
-                    (item.space, item.external_id): item
-                    for item in entry_edges_to_delete
-                }
+                {(item.space, item.external_id): item for item in entry_edges_to_delete}
             )
 
         return UpsertOperation(
@@ -76,9 +71,7 @@ class UpsertMapper:
                     if isinstance(entry, datetime.datetime)
                     else entry
                 )
-            elif isinstance(property, EdgeConnection) and isinstance(
-                entry, list
-            ):
+            elif isinstance(property, EdgeConnection) and isinstance(entry, list):
                 possible_entries = self._map_edges(instance, property, entry)
 
                 previous_edges = {
@@ -104,9 +97,7 @@ class UpsertMapper:
         node = NodeApply(
             external_id=instance.external_id,
             space=instance.space,
-            sources=[
-                NodeOrEdgeData(source=view.as_id(), properties=properties)
-            ],
+            sources=[NodeOrEdgeData(source=view.as_id(), properties=properties)],
         )
 
         return node, edges, edges_to_delete

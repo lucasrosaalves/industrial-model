@@ -39,9 +39,7 @@ from .view_mapper import ViewMapper
 
 
 class CogniteAdapter:
-    def __init__(
-        self, cognite_client: CogniteClient, data_model_id: DataModelId
-    ):
+    def __init__(self, cognite_client: CogniteClient, data_model_id: DataModelId):
         self._cognite_client = cognite_client
 
         view_mapper = ViewMapper(cognite_client, data_model_id)
@@ -52,9 +50,7 @@ class CogniteAdapter:
         self._aggregation_mapper = AggregationMapper(view_mapper)
         self._search_mapper = SearchMapper(view_mapper)
 
-    def search(
-        self, statement: SearchStatement[TViewInstance]
-    ) -> list[dict[str, Any]]:
+    def search(self, statement: SearchStatement[TViewInstance]) -> list[dict[str, Any]]:
         search_query = self._search_mapper.map(statement)
         data = self._cognite_client.data_modeling.instances.search(
             view=search_query.view.as_id(),
@@ -132,18 +128,14 @@ class CogniteAdapter:
         operation = self._upsert_mapper.map(entries)
 
         for node_chunk in operation.chunk_nodes():
-            logger.debug(
-                f"Upserting {len(node_chunk)} nodes (replace={replace})"
-            )
+            logger.debug(f"Upserting {len(node_chunk)} nodes (replace={replace})")
             self._cognite_client.data_modeling.instances.apply(
                 nodes=node_chunk,
                 replace=replace,
             )
 
         for edge_chunk in operation.chunk_edges():
-            logger.debug(
-                f"Upserting {len(edge_chunk)} edges (replace={replace})"
-            )
+            logger.debug(f"Upserting {len(edge_chunk)} edges (replace={replace})")
             self._cognite_client.data_modeling.instances.apply(
                 edges=edge_chunk,
                 replace=replace,
@@ -172,9 +164,7 @@ class CogniteAdapter:
         if not new_query:
             return None
 
-        new_query_result = self._cognite_client.data_modeling.instances.query(
-            new_query
-        )
+        new_query_result = self._cognite_client.data_modeling.instances.query(new_query)
 
         result = map_nodes_and_edges(new_query_result, new_query)
 

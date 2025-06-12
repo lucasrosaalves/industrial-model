@@ -16,9 +16,7 @@ SPACE_PROPERTY = "space"
 
 
 class QueryOptimizer:
-    def __init__(
-        self, cognite_client: CogniteClient, data_model_id: DataModelId
-    ):
+    def __init__(self, cognite_client: CogniteClient, data_model_id: DataModelId):
         self._all_spaces = data_model_id.instance_spaces
         self._cognite_client = cognite_client
         self._lock = Lock()
@@ -36,9 +34,7 @@ class QueryOptimizer:
             return
 
         filter_spaces = (
-            self._find_spaces(instance_spaces_prefix)
-            if instance_spaces_prefix
-            else []
+            self._find_spaces(instance_spaces_prefix) if instance_spaces_prefix else []
         )
         if instance_spaces:
             filter_spaces.extend(instance_spaces)
@@ -48,9 +44,9 @@ class QueryOptimizer:
 
     def _has_space_filter(self, where_clauses: list[Expression]) -> bool:
         for where_clause in where_clauses:
-            if isinstance(
-                where_clause, BoolExpression
-            ) and self._has_space_filter(where_clause.filters):
+            if isinstance(where_clause, BoolExpression) and self._has_space_filter(
+                where_clause.filters
+            ):
                 return True
             elif (
                 isinstance(where_clause, LeafExpression)
@@ -64,9 +60,7 @@ class QueryOptimizer:
         all_spaces = self._load_spaces()
 
         return [
-            space
-            for space in all_spaces
-            if space.startswith(instance_spaces_prefix)
+            space for space in all_spaces if space.startswith(instance_spaces_prefix)
         ]
 
     def _load_spaces(self) -> list[str]:

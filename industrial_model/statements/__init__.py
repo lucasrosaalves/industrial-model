@@ -47,9 +47,7 @@ class BaseStatement(Generic[T]):
     def desc(self, property: str | Column | Any) -> Self:
         return self.sort(property, "descending")
 
-    def sort(
-        self, property: str | Column | Any, direction: SORT_DIRECTION
-    ) -> Self:
+    def sort(self, property: str | Column | Any, direction: SORT_DIRECTION) -> Self:
         self.sort_clauses.append(
             (
                 _create_column(property),
@@ -99,9 +97,7 @@ class AggregationStatement(Generic[T]):
     entity: type[T] = field(init=True)
     aggregate: AggregateTypes = field(init=True)
 
-    aggregation_property: Column = field(
-        init=False, default=Column("externalId")
-    )
+    aggregation_property: Column = field(init=False, default=Column("externalId"))
     where_clauses: list[Expression] = field(init=False, default_factory=list)
     limit_: int = field(init=False, default=-1)
 

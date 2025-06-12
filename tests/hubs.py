@@ -15,8 +15,7 @@ def generate_config(
 ) -> dict[str, dict[str, Any]]:
     load_dotenv(override=True)
     file_path = Path(
-        config_file_path
-        or f"{os.path.dirname(__file__)}/cognite-sdk-config.yaml"
+        config_file_path or f"{os.path.dirname(__file__)}/cognite-sdk-config.yaml"
     )
     env_sub_template = Template(file_path.read_text())
     file_env_parsed = env_sub_template.substitute(dict(os.environ))

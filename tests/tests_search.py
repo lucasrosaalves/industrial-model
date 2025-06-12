@@ -9,9 +9,9 @@ from .models import Event, SearchEvent
 if __name__ == "__main__":
     adapter = generate_engine()
 
-    filter = col(SearchEvent.start_date_time).gt_(
-        datetime.datetime(2025, 3, 1)
-    ) & (col(SearchEvent.start_date_time) < datetime.datetime(2025, 6, 1))
+    filter = col(SearchEvent.start_date_time).gt_(datetime.datetime(2025, 3, 1)) & (
+        col(SearchEvent.start_date_time) < datetime.datetime(2025, 6, 1)
+    )
 
     statement = (
         search(SearchEvent)

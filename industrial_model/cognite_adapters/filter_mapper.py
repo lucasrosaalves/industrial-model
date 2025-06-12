@@ -73,9 +73,7 @@ class FilterMapper:
         elif expression.operator == "<=":
             return cdf_filters.Range(property_ref, lte=value_)
         elif expression.operator == "nested":
-            target_view = self._get_nested_target_view(
-                expression.property, root_view
-            )
+            target_view = self._get_nested_target_view(expression.property, root_view)
 
             assert isinstance(value_, Expression)
 
@@ -91,9 +89,7 @@ class FilterMapper:
             return cdf_filters.ContainsAll(property_ref, value_)
         elif expression.operator == "containsAny":
             return cdf_filters.ContainsAny(property_ref, value_)
-        raise NotImplementedError(
-            f"Operator {expression.operator} not implemented"
-        )
+        raise NotImplementedError(f"Operator {expression.operator} not implemented")
 
     def _get_nested_target_view(self, property: str, root_view: View) -> View:
         view_definiton = root_view.properties[property]

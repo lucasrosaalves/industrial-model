@@ -11,40 +11,32 @@ if __name__ == "__main__":
 
     filter = (
         col(Event.start_date_time).gt_(datetime.datetime(2025, 3, 1))
-        & col(Event.ref_site).nested_(
-            DescribableEntity.external_id == "STS-CLK"
-        )
+        & col(Event.ref_site).nested_(DescribableEntity.external_id == "STS-CLK")
         & (col(Event.start_date_time) < datetime.datetime(2025, 6, 1))
     )
 
-    statement = (
-        select(Event).limit(100).where(filter).asc(Event.start_date_time)
-    )
+    statement = select(Event).limit(100).where(filter).asc(Event.start_date_time)
 
     result = [
-        item.model_dump(mode="json")
-        for item in adapter.query_all_pages(statement)
+        item.model_dump(mode="json") for item in adapter.query_all_pages(statement)
     ]
     print(len(result))
     json.dump(result, open("events.json", "w"), indent=2)
 
-    result = adapter.query(statement)
-    print(len(result.data))
+    result_paginated = adapter.query(statement)
+    print(len(result_paginated.data))
     json.dump(
-        result.model_dump(mode="json"),
+        result_paginated.model_dump(mode="json"),
         open("events_paginated.json", "w"),
         indent=2,
     )
 
     statement_msdp = (
-        select(Msdp)
-        .limit(2500)
-        .where(Msdp.effective_date >= datetime.date(2022, 5, 1))
+        select(Msdp).limit(2500).where(Msdp.effective_date >= datetime.date(2022, 5, 1))
     )
 
     result_msdp = [
-        item.model_dump(mode="json")
-        for item in adapter.query_all_pages(statement_msdp)
+        item.model_dump(mode="json") for item in adapter.query_all_pages(statement_msdp)
     ]
     print(len(result_msdp))
     json.dump(result_msdp, open("msdp.json", "w"), indent=2)
