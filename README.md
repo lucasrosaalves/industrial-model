@@ -229,6 +229,11 @@ engine.delete([person])
 
 # 10. Search
 
+#  Notes:
+#     External ID searches work as prefix searches.
+#     This method does not include edges or direct relations in the result model.
+#     Filter does not support nested properties.
+
 class Entity(ViewInstance):
     view_config = ViewInstanceConfig(
         view_external_id="Person"

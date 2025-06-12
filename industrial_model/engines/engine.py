@@ -32,6 +32,12 @@ class Engine:
         statement: SearchStatement[TViewInstance],
         validation_mode: ValidationMode = "raiseOnError",
     ) -> list[TViewInstance]:
+        """
+        Note:
+            External ID searches work as prefix searches.
+            This method does not include edges or direct relations in the result model.
+            Filter does not support nested properties.
+        """
         data = self._cognite_adapter.search(statement)
         return self._validate_data(statement.entity, data, validation_mode)
 

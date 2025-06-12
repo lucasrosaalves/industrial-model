@@ -31,6 +31,12 @@ class AsyncEngine:
         statement: SearchStatement[TViewInstance],
         validation_mode: ValidationMode = "raiseOnError",
     ) -> list[TViewInstance]:
+        """
+        Note:
+            External ID searches work as prefix searches.
+            This method does not include edges or direct relations in the result model.
+            Filter does not support nested properties.
+        """
         return await run_async(self._engine.search, statement, validation_mode)
 
     async def query_async(
