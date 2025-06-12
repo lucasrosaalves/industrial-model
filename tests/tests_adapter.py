@@ -18,7 +18,7 @@ if __name__ == "__main__":
     )
 
     statement = (
-        select(Event).limit(2500).where(filter).asc(Event.start_date_time)
+        select(Event).limit(100).where(filter).asc(Event.start_date_time)
     )
 
     result = [
@@ -27,6 +27,14 @@ if __name__ == "__main__":
     ]
     print(len(result))
     json.dump(result, open("events.json", "w"), indent=2)
+
+    result = adapter.query(statement)
+    print(len(result.data))
+    json.dump(
+        result.model_dump(mode="json"),
+        open("events_paginated.json", "w"),
+        indent=2,
+    )
 
     statement_msdp = (
         select(Msdp)
