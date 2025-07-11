@@ -1,12 +1,11 @@
 from typing import Annotated
 
-from industrial_model.queries import BaseQuery
-from industrial_model.queries.params import BoolQueryParam, QueryParam, SortParam
-from industrial_model.statements.expressions import BoolExpression
-from tests.models import ReportingSite
+from industrial_model.queries import BaseQuery, BoolQueryParam, QueryParam, SortParam
+from industrial_model.statements import BoolExpression
+from tests.models import CogniteDescribable
 
 
-class ReportingSiteQuery(BaseQuery):
+class DescribableEntityQuery(BaseQuery):
     external_id_in: Annotated[
         list[str] | None,
         QueryParam("externalId", "in"),
@@ -21,27 +20,27 @@ class ReportingSiteQuery(BaseQuery):
         str | None,
         SortParam("ascending"),
     ] = None
-    or_: Annotated["ReportingSiteQuery | None", BoolQueryParam("or")] = None
+    or_: Annotated["DescribableEntityQuery | None", BoolQueryParam("or")] = None
 
 
 def test_query() -> None:
-    statement = ReportingSiteQuery().to_statement(ReportingSite)
+    statement = DescribableEntityQuery().to_statement(CogniteDescribable)
     assert len(statement.get_values().where_clauses) == 0
     assert len(statement.get_values().sort_clauses) == 0
 
-    statement = ReportingSiteQuery(sort_by="name").to_statement(ReportingSite)
+    statement = DescribableEntityQuery(sort_by="name").to_statement(CogniteDescribable)
     assert len(statement.get_values().where_clauses) == 0
     assert len(statement.get_values().sort_clauses) == 1
 
-    statement = ReportingSiteQuery(external_id_in=["123"], name_eq="34").to_statement(
-        ReportingSite
-    )
+    statement = DescribableEntityQuery(
+        external_id_in=["123"], name_eq="34"
+    ).to_statement(CogniteDescribable)
     assert len(statement.get_values().where_clauses) == 2
     assert len(statement.get_values().sort_clauses) == 0
 
-    statement = ReportingSiteQuery(
-        or_=ReportingSiteQuery(name_eq="Test", external_id_in=["456"]),
-    ).to_statement(ReportingSite)
+    statement = DescribableEntityQuery(
+        or_=DescribableEntityQuery(name_eq="Test", external_id_in=["456"]),
+    ).to_statement(CogniteDescribable)
 
     assert len(statement.get_values().where_clauses) == 1
     assert len(statement.get_values().sort_clauses) == 0

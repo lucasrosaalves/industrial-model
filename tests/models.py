@@ -1,93 +1,33 @@
+from __future__ import annotations
+
 import datetime
-from typing import Annotated
 
 from pydantic import Field
 
 from industrial_model import (
-    InstanceId,
     ViewInstance,
-    ViewInstanceConfig,
-    WritableViewInstance,
 )
 
 
-class DescribableEntity(ViewInstance):
-    name: str
+class CogniteDescribable(ViewInstance):
+    name: str | None = None
     description: str | None = None
+    tags: list[str] = Field(default_factory=list)
+    aliases: list[str] = Field(default_factory=list)
 
 
-class ReportingSite(DescribableEntity):
-    time_zone: DescribableEntity | None = None
-    country: DescribableEntity | None = None
+class CogniteAssetType(CogniteDescribable):
+    code: str
 
 
-class EventDetail(ViewInstance):
-    ref_metric_code: DescribableEntity | None = None
-    ref_event_code: DescribableEntity | None = None
-    ref_sub_category_l1: DescribableEntity | None = None
-    ref_sub_category_l2: DescribableEntity | None = None
-    ref_sub_category_l3: DescribableEntity | None = None
-    ref_sub_category_l4: DescribableEntity | None = None
-    ref_sub_category_l5: DescribableEntity | None = None
-    ref_equipment: DescribableEntity | None = None
-    ref_discipline: DescribableEntity | None = None
+class CogniteEquipment(CogniteDescribable):
+    asset: CogniteAsset | None = None
 
 
-class Event(ViewInstance):
-    view_config = ViewInstanceConfig(
-        view_external_id="OEEEvent",
-        instance_spaces_prefix="OEE-",
-    )
-    event_definition: str | None = None
-    start_date_time: datetime.datetime | None = None
-    ref_site: ReportingSite | None = None
-    ref_unit: DescribableEntity | None = None
-    ref_reporting_line: DescribableEntity | None = None
-    ref_reporting_location: DescribableEntity | None = None
-    ref_product: DescribableEntity | None = None
-    ref_material: DescribableEntity | None = None
-    ref_process_type: DescribableEntity | None = None
-    ref_oee_event_detail: Annotated[
-        list[EventDetail],
-        Field(default_factory=list, alias="refOEEEventDetail"),
-    ]
-
-
-class SearchEvent(ViewInstance):
-    view_config = ViewInstanceConfig(view_external_id="OEEEvent")
-
-    start_date_time: datetime.datetime
-    event_definition: str
-    ref_site: InstanceId
-
-
-class Msdp(ViewInstance):
-    view_config = ViewInstanceConfig(
-        view_external_id="OEEMSDP",
-        instance_spaces_prefix="OEE-",
-    )
-
-    effective_date: datetime.date
-
-
-class WritableEvent(WritableViewInstance):
-    view_config = ViewInstanceConfig(
-        view_external_id="OEEEvent",
-        instance_spaces_prefix="OEE-",
-    )
-
-    start_date_time: datetime.datetime | None = None
-    ref_site: ReportingSite | None = None
-    ref_reporting_line: DescribableEntity | None = None
-    ref_oee_event_detail: Annotated[
-        list[EventDetail],
-        Field(default_factory=list, alias="refOEEEventDetail"),
-    ]
-
-    def edge_id_factory(
-        self, target_node: InstanceId, edge_type: InstanceId
-    ) -> InstanceId:
-        return InstanceId(
-            external_id=f"{self.external_id}-{target_node.external_id}-{edge_type.external_id}",
-            space=self.space,
-        )
+class CogniteAsset(CogniteDescribable):
+    source_created_time: datetime.datetime | None = None
+    source_updated_time: datetime.datetime | None = None
+    parent: CogniteAsset | None = None
+    path: list[CogniteAsset] = Field(default_factory=list)
+    type: CogniteAssetType | None = None
+    equipment: list[CogniteEquipment] = Field(default_factory=list)

@@ -1,4 +1,4 @@
-from industrial_model.models import ViewInstance, ViewInstanceConfig
+from industrial_model import ViewInstance, ViewInstanceConfig
 
 
 class Model1(ViewInstance):
