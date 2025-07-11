@@ -1,6 +1,6 @@
 [project]
 name = "industrial-model"
-version = "0.1.40"
+version = "0.1.41"
 description = "Industrial Model ORM"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -30,6 +30,9 @@ build-backend = "hatchling.build"
 [tool.hatch.build]
 packages = ["industrial_model"]
 
+[project.urls]
+Homepage = 'https://github.com/lucasrosaalves/industrial-model'
+Source = 'https://github.com/lucasrosaalves/industrial-model'
 
 [tool.uv]
 dev-dependencies = [
