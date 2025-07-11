@@ -17,9 +17,7 @@ if __name__ == "__main__":
     item = engine.query(statement).data[0]
 
     item.ref_oee_event_detail.clear()
-    item.ref_oee_event_detail.append(
-        EventDetail(external_id="test", space="test")
-    )
+    item.ref_oee_event_detail.append(EventDetail(external_id="test", space="test"))
 
     operation = upsert_mapper.map([item])
 

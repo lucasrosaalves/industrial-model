@@ -12,12 +12,13 @@ from industrial_model import (
 
 
 class DescribableEntity(ViewInstance):
-    name: str | None = None
+    name: str
     description: str | None = None
 
 
 class ReportingSite(DescribableEntity):
     time_zone: DescribableEntity | None = None
+    country: DescribableEntity | None = None
 
 
 class EventDetail(ViewInstance):
@@ -37,7 +38,7 @@ class Event(ViewInstance):
         view_external_id="OEEEvent",
         instance_spaces_prefix="OEE-",
     )
-
+    event_definition: str | None = None
     start_date_time: datetime.datetime | None = None
     ref_site: ReportingSite | None = None
     ref_unit: DescribableEntity | None = None
@@ -50,6 +51,23 @@ class Event(ViewInstance):
         list[EventDetail],
         Field(default_factory=list, alias="refOEEEventDetail"),
     ]
+
+
+class SearchEvent(ViewInstance):
+    view_config = ViewInstanceConfig(view_external_id="OEEEvent")
+
+    start_date_time: datetime.datetime
+    event_definition: str
+    ref_site: InstanceId
+
+
+class Msdp(ViewInstance):
+    view_config = ViewInstanceConfig(
+        view_external_id="OEEMSDP",
+        instance_spaces_prefix="OEE-",
+    )
+
+    effective_date: datetime.date
 
 
 class WritableEvent(WritableViewInstance):

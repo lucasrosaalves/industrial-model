@@ -1,7 +1,9 @@
-from industrial_model.models import RootModel
+from pydantic import BaseModel, ConfigDict
 
 
-class DataModelId(RootModel):
+class DataModelId(BaseModel):
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
     external_id: str
     space: str
     version: str

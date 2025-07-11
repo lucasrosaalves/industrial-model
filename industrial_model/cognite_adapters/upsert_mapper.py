@@ -31,19 +31,14 @@ class UpsertMapper:
         edges_to_delete: dict[tuple[str, str], EdgeContainer] = {}
 
         for instance in instances:
-            entry_nodes, entry_edges, entry_edges_to_delete = (
-                self._map_instance(instance)
+            entry_nodes, entry_edges, entry_edges_to_delete = self._map_instance(
+                instance
             )
 
             nodes[instance.as_tuple()] = entry_nodes
-            edges.update(
-                {(item.space, item.external_id): item for item in entry_edges}
-            )
+            edges.update({(item.space, item.external_id): item for item in entry_edges})
             edges_to_delete.update(
-                {
-                    (item.space, item.external_id): item
-                    for item in entry_edges_to_delete
-                }
+                {(item.space, item.external_id): item for item in entry_edges_to_delete}
             )
 
         return UpsertOperation(
@@ -67,18 +62,8 @@ class UpsertMapper:
             entry = instance.__getattribute__(property_key)
 
             if isinstance(property, MappedProperty):
-                properties[property_name] = (
-                    DirectRelationReference(
-                        space=entry.space, external_id=entry.external_id
-                    )
-                    if isinstance(entry, InstanceId)
-                    else datetime_to_ms_iso_timestamp(entry)
-                    if isinstance(entry, datetime.datetime)
-                    else entry
-                )
-            elif isinstance(property, EdgeConnection) and isinstance(
-                entry, list
-            ):
+                properties[property_name] = self._get_mapped_property_value(entry)
+            elif isinstance(property, EdgeConnection) and isinstance(entry, list):
                 possible_entries = self._map_edges(instance, property, entry)
 
                 previous_edges = {
@@ -104,12 +89,24 @@ class UpsertMapper:
         node = NodeApply(
             external_id=instance.external_id,
             space=instance.space,
-            sources=[
-                NodeOrEdgeData(source=view.as_id(), properties=properties)
-            ],
+            sources=[NodeOrEdgeData(source=view.as_id(), properties=properties)],
         )
 
         return node, edges, edges_to_delete
+
+    def _get_mapped_property_value(self, entry: Any) -> Any:
+        if isinstance(entry, list):
+            return [self._get_mapped_property_value(item) for item in entry]
+
+        if isinstance(entry, InstanceId):
+            return DirectRelationReference(
+                space=entry.space, external_id=entry.external_id
+            )
+        if isinstance(entry, datetime.datetime):
+            return datetime_to_ms_iso_timestamp(entry)
+        if isinstance(entry, datetime.date):
+            return entry.strftime("%Y-%m-%d")
+        return entry
 
     def _map_edges(
         self,

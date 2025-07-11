@@ -21,4 +21,4 @@ NESTED_SEP = "|"
 EDGE_MARKER = "<EdgeMarker>"
 EDGE_DIRECTION = Literal["outwards", "inwards"]
 MAX_LIMIT = 10_000
-DEFAULT_LIMIT = 5_000
+DEFAULT_LIMIT = 1_000

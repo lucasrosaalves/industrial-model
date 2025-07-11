@@ -44,3 +44,25 @@ class RootModel(BaseModel):
         populate_by_name=True,
         from_attributes=True,
     )
+
+    def get_field_name(self, field_name_or_alias: str) -> str | None:
+        entry = self.__class__.model_fields.get(field_name_or_alias)
+        if entry:
+            return field_name_or_alias
+
+        for key, field_info in self.__class__.model_fields.items():
+            if field_info.alias == field_name_or_alias:
+                return key
+
+        return None
+
+    def get_field_alias(self, field_name_or_alias: str) -> str | None:
+        entry = self.__class__.model_fields.get(field_name_or_alias)
+        if entry:
+            return entry.alias
+
+        for _, field_info in self.__class__.model_fields.items():
+            if field_info.alias == field_name_or_alias:
+                return field_info.alias
+
+        return None

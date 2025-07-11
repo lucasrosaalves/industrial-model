@@ -1,11 +1,16 @@
 [project]
 name = "industrial-model"
-version = "0.1.10"
+version = "0.1.40"
 description = "Industrial Model ORM"
 readme = "README.md"
 requires-python = ">=3.11"
 authors = [{ name = "Lucas Alves", email = "lucasrosaalves@gmail.com" }]
-dependencies = ["anyio>=4.9.0", "cognite-sdk>=7.75.0", "pydantic>=2.11.4"]
+dependencies = [
+    "anyio>=4.9.0",
+    "cognite-sdk>=7.75.0",
+    "pydantic>=2.11.4",
+    "pyyaml>=6.0.2",
+]
 classifiers = [
     "Programming Language :: Python",
     'Programming Language :: Python :: 3',
@@ -22,12 +27,15 @@ classifiers = [
 requires = ["hatchling >= 1.27"]
 build-backend = "hatchling.build"
 
+[tool.hatch.build]
+packages = ["industrial_model"]
+
+
 [tool.uv]
 dev-dependencies = [
     "dotenv>=0.9.9",
     "mypy>=1.15.0",
     "pytest>=8.3.5",
-    "pyyaml>=6.0.2",
     "ruff>=0.11.8",
     "types-pyyaml>=6.0.12.20250402",
 ]
@@ -36,7 +44,7 @@ dev-dependencies = [
 strict = true
 
 [tool.ruff]
-line-length = 79
+line-length = 88
 
 [tool.ruff.lint]
 select = [

@@ -43,9 +43,7 @@ def get_property_ref(
 def get_cognite_instance_ids(
     instance_ids: list[TViewInstance],
 ) -> list[dict[str, str]]:
-    return [
-        get_cognite_instance_id(instance_id) for instance_id in instance_ids
-    ]
+    return [get_cognite_instance_id(instance_id) for instance_id in instance_ids]
 
 
 def get_cognite_instance_id(instance_id: TViewInstance) -> dict[str, str]:
@@ -109,15 +107,13 @@ def _create_query(
     final_cursors: dict[str, str | None] = {}
 
     for cursor_key, cursor_value in leaf_cursors.items():
-        children = nodes_children[cursor_key]
-        parent = nodes_parent[cursor_key]
+        children = nodes_children.get(cursor_key, set())
+        parent = nodes_parent.get(cursor_key, set())
 
         valid_keys = parent.union(children)
         valid_keys.add(cursor_key)
 
-        with_.update(
-            {k: v for k, v in previous_query.with_.items() if k in valid_keys}
-        )
+        with_.update({k: v for k, v in previous_query.with_.items() if k in valid_keys})
         select_.update(
             {k: v for k, v in previous_query.select.items() if k in valid_keys}
         )
@@ -145,13 +141,13 @@ def _get_leaf_cursors(
         ):
             continue
 
-        children = nodes_children[cursor_key]
+        children = nodes_children.get(cursor_key, set())
 
         target_cursors_keys = target_cursors.keys()
         if len(children.intersection(target_cursors_keys)) > 0:
             continue
 
-        parent = nodes_parent[cursor_key]
+        parent = nodes_parent.get(cursor_key, set())
         cursor_to_remove = parent.intersection(target_cursors_keys)
         for cursor_key_to_remove in cursor_to_remove:
             target_cursors.pop(cursor_key_to_remove)

@@ -9,9 +9,7 @@ from industrial_model.constants import (
 )
 
 RANGE_SUPPORTED_VALUES = str | int | float
-LIST_SUPPORTED_VALUES = (
-    list[str] | list[int] | list[float] | list[dict[str, str]]
-)
+LIST_SUPPORTED_VALUES = list[str] | list[int] | list[float] | list[dict[str, str]]
 SUPPORTED_VALUES = (
     RANGE_SUPPORTED_VALUES | bool | dict[str, str] | LIST_SUPPORTED_VALUES
 )
@@ -49,9 +47,7 @@ class LeafExpression(Expression):
 class Column:
     def __init__(self, property: Any):
         assert isinstance(property, str | Column)
-        property_ = (
-            property.property if isinstance(property, Column) else property
-        )
+        property_ = property.property if isinstance(property, Column) else property
         self.property: str = property_
 
     def __hash__(self) -> int:
@@ -120,23 +116,17 @@ class Column:
             filters=[self._compare(operator, other)],  # type: ignore
         )
 
-    def nested_(
-        self, expression: bool | LeafExpression | BoolExpression
-    ) -> bool:
+    def nested_(self, expression: bool | LeafExpression | BoolExpression) -> bool:
         if not isinstance(expression, Expression):
             raise ValueError("Invalid expression")
 
         return self._compare("nested", expression)
 
-    def _compare(
-        self, operator: LEAF_EXPRESSION_OPERATORS, value: Any
-    ) -> bool:
+    def _compare(self, operator: LEAF_EXPRESSION_OPERATORS, value: Any) -> bool:
         if isinstance(value, Column):
             raise ValueError("can not compare two columns in a graphdb")
 
-        return LeafExpression(
-            property=self.property, operator=operator, value=value
-        )  # type: ignore
+        return LeafExpression(property=self.property, operator=operator, value=value)  # type: ignore
 
 
 def _unwrap_expressions(
@@ -150,21 +140,15 @@ def _unwrap_expressions(
 
 
 def and_(*expressions: bool | LeafExpression | BoolExpression) -> bool:
-    return BoolExpression(
-        operator="and", filters=_unwrap_expressions(*expressions)
-    )  # type: ignore
+    return BoolExpression(operator="and", filters=_unwrap_expressions(*expressions))  # type: ignore
 
 
 def or_(*expressions: bool | LeafExpression | BoolExpression) -> bool:
-    return BoolExpression(
-        operator="or", filters=_unwrap_expressions(*expressions)
-    )  # type: ignore
+    return BoolExpression(operator="or", filters=_unwrap_expressions(*expressions))  # type: ignore
 
 
 def not_(*expressions: bool | LeafExpression | BoolExpression) -> bool:
-    return BoolExpression(
-        operator="not", filters=_unwrap_expressions(*expressions)
-    )  # type: ignore
+    return BoolExpression(operator="not", filters=_unwrap_expressions(*expressions))  # type: ignore
 
 
 def col(property: Any) -> Column:

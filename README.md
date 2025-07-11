@@ -10,7 +10,6 @@
 - Build complex queries using fluent and composable filters.
 - Easily fetch data using standard or paginated query execution.
 - Automatic alias and field transformation support.
-- Extensible and test-friendly design.
 
 ---
 
@@ -22,179 +21,287 @@ pip install industrial-model
 
 ---
 
-## 🛠️ Usage Example
+# Usage Example
+
+This section shows how to interact with **Cognite Data Fusion (CDF)** using the `industrial_model` package.  
+We use the simplified version of the `CogniteAsset`view in the `CogniteCore` data model (version `v1`) as a sample for all the examples below.
+
+---
+
+```graphql
+type CogniteAsset {
+  object3D: Cognite3DObject
+  name: String
+  description: String
+  tags: [String]
+  parent: CogniteAsset
+  root: CogniteAsset
+}
+```
+
+---
+
+## 🚀 Getting Started
+
+### 1. Define Your Model (You only need to add the properties that you want to retrieve)
 
 ```python
-import datetime
+from industrial_model import ViewInstance
+
+class CogniteAsset(ViewInstance):
+    name: str
+    description: str
+    aliases: list[str]
+```
+
+### 2. Create the Engine
+
+#### Option A: From Configuration File
+
+Create a `cognite-sdk-config.yaml` file with your credentials and model configuration:
+
+```yaml
+cognite:
+  project: "${CDF_PROJECT}"
+  client_name: "${CDF_CLIENT_NAME}"
+  base_url: "https://${CDF_CLUSTER}.cognitedata.com"
+  credentials:
+    client_credentials:
+      token_url: "${CDF_TOKEN_URL}"
+      client_id: "${CDF_CLIENT_ID}"
+      client_secret: "${CDF_CLIENT_SECRET}"
+      scopes: ["https://${CDF_CLUSTER}.cognitedata.com/.default"]
+
+data_model:
+  external_id: "CogniteCore"
+  space: "cdf_cdm"
+  version: "v1"
+```
+
+```python
+from industrial_model import Engine
+from pathlib import Path
+
+engine = Engine.from_config_file(Path("cognite-sdk-config.yaml"))
+```
+
+#### Option B: Manually
+
+```python
 from cognite.client import CogniteClient
+from industrial_model import Engine, DataModelId
+
+engine = Engine(
+    cognite_client=CogniteClient(), # you need to create a valid cognite client
+    data_model_id=DataModelId(external_id="CogniteCore", space="cdf_cdm", version="v1")
+)
+```
+
+---
+
+## 🔎 Querying Assets by Alias
+
+```python
+from industrial_model import select, col
+
+statement = (
+    select(CogniteAsset)
+    .where(col(CogniteAsset.aliases).contains_any_(["my_alias"]))
+    .limit(1000)
+)
+
+results = engine.query_all_pages(statement)
+```
+
+---
+
+## 🔗 Filtering by Parent Name
+
+```python
+class CogniteAsset(ViewInstance):
+    name: str
+    description: str
+    aliases: list[str]
+    parent: CogniteAsset | None = None
+```
+
+```python
+statement = (
+    select(CogniteAsset)
+    .where(
+        col(CogniteAsset.aliases).contains_any_(["my_alias"]) &
+        col(CogniteAsset.parent).nested_(col(CogniteAsset.name) == "Parent Asset Name")
+    )
+)
+
+results = engine.query(statement)
+```
+
+---
+
+## 🔗 Filtering by Parent Name with bool operators
+
+```python
+from industrial_model import select, col, or_, and_
+
+statement = select(CogniteAsset).where(
+    and_(
+        col(CogniteAsset.aliases).contains_any_(["my_alias"]),
+        or_(
+            col(CogniteAsset.parent).nested_(
+                col(CogniteAsset.name) == "Parent Asset Name 1"
+            ),
+            col(CogniteAsset.parent).nested_(
+                col(CogniteAsset.name) == "Parent Asset Name 2"
+            ),
+        ),
+    )
+)
+
+results = engine.query(statement)
+```
+
+---
+
+## 🔗 Paginating with cursor and sort by name
+
+```python
+class CogniteAsset(ViewInstance):
+    name: str
+    description: str
+    aliases: list[str]
+    parent: CogniteAsset | None = None
+```
+
+```python
+statement = select(CogniteAsset).asc(CogniteAsset.name).cursor("NEXT_CURSOR")
+
+results = engine.query(statement)
+```
+
+---
+
+## 🔗 Proving an alias for a property
+
+```python
 from pydantic import Field
 
-from industrial_model import (
-    AsyncEngine,
-    DataModelId,
-    Engine,
-    ViewInstance,
-    select,
-    col,
-    and_,
-    or_,
-)
+class CogniteAsset(ViewInstance):
+    another_name: str = Field(alias="name")
+```
 
-# Define entities (view instances)
+---
 
+## 🎯 Optimize Query with View Config - The spaces will be appended in every query
 
-class Car(ViewInstance):
-    name: str
+```python
+from industrial_model import ViewInstanceConfig
 
-
-class Region(ViewInstance):
-    name: str
-
-
-class Country(ViewInstance):
-    name: str
-    region: Region = Field(
-        alias="regionRef"
-    )  # Maps property to field if names differ
-
-
-class Person(ViewInstance):
-    name: str
-    birthday: datetime.date
-    lives_in: Country
-    cars: list[Car]
-
-
-# By default, the ORM maps the class name to the view in the data model.
-# You can override this behavior using the `view_config` field.
-
-# For improved query performance, you can configure `instance_spaces` or `instance_spaces_prefix`
-# in the `view_config`. These options include space filters in the generated queries,
-# which can significantly reduce response times when working with large datasets.
-
-class AnotherPerson(ViewInstance):
+class CogniteAsset(ViewInstance):
     view_config = ViewInstanceConfig(
-        view_external_id="Person",                    # Maps this class to the 'Person' view
-        instance_spaces_prefix="Industr-",            # Filters queries to spaces with this prefix
-        instance_spaces=["Industrial-Data"]           # Alternatively, explicitly filter by these spaces
+        view_external_id="CogniteAsset",  # Maps this class to the 'CogniteAsset' view
+        instance_spaces_prefix="Industr-",  # Filters queries to spaces with this prefix
+        instance_spaces=[
+            "Industrial-Data"
+        ],  # Alternatively, explicitly filter by these spaces
     )
-
     name: str
-    birthday: datetime.date
-    lives_in: Country
-    cars: list[Car]
+    description: str
+    aliases: list[str]
+    parent: CogniteAsset | None = None
+```
 
+---
 
-# Initialize Cognite client and data model engine
+## 🔍 Search by Fuzzy Name
 
-cognite_client = CogniteClient()
+```python
+from industrial_model import search
 
-data_model_id = DataModelId(
-    external_id="IndustrialData",
-    space="IndustralSpaceType",
-    version="v1"
+search_statement = (
+    search(CogniteAsset)
+    .where(col(CogniteAsset.aliases).contains_any_(["my_alias"]))
+    .query_by("my fuzzy name", [CogniteAsset.name])
 )
 
-engine = Engine(cognite_client, data_model_id)
-async_engine = AsyncEngine(cognite_client, data_model_id)  # Optional async engine
+search_result = engine.search(search_statement)
+```
 
+---
 
-# -----------------------------------
-# Example Queries
-# -----------------------------------
+## 📊 Aggregating Data
 
-# 1. Basic query: Find person named "Lucas"
-statement = select(Person).where(Person.name == "Lucas").limit(1)
-result = engine.query(statement)
+```python
+from industrial_model import aggregate, AggregatedViewInstance
 
-
-# 2. Combined filter with AND/OR
-statement = select(Person).where(
-    (Person.name == "Lucas") & (Person.birthday > datetime.date(2023, 1, 2)) |
-    (Person.name == "Another")
-)
-result = engine.query(statement)
-
-
-# 3. Same logic using `col()` expressions
-statement = select(Person).where(
-    (col("name").equals_("Lucas")) &
-    (col(Person.birthday).gt_("2023-01-02")) |
-    (Person.name == "Another")
-)
-result = engine.query(statement)
-
-
-# 4. Nested filtering using relationships
-statement = select(Person).where(
-    or_(
-        col(Person.lives_in).nested_(Country.name == "usa"),
-        and_(
-            col(Person.lives_in).nested_(col(Country.name).equals_("bra")),
-            col(Person.birthday).equals_("2023-01-01")
-        )
-    )
-)
-result = engine.query(statement)
-
-
-# 5. Paginated query with sorting and cursor
-statement = (
-    select(Person)
-    .where(
-        (Person.name == "Lucas") &
-        (Person.birthday > datetime.date(2023, 1, 2)) |
-        (Person.name == "Another")
-    )
-    .limit(10)
-    .cursor("NEXT CURSOR")
-    .asc(Person.name)
-)
-result = engine.query(statement)
-
-
-# 6. Fetch all pages of a query
-statement = select(Person).where(
-    (Person.name == "Lucas") &
-    (Person.birthday > datetime.date(2023, 1, 2)) |
-    (Person.name == "Another")
-)
-all_results = engine.query_all_pages(statement)
-
-
-# 7. Data Ingestion
-
-from industrial_model import (
-    WritableViewInstance  # necessary for data ingestion
-)
-
-
-class WritablePerson(WritableViewInstance):
+class CogniteAssetByName(AggregatedViewInstance):
+    view_config = ViewInstanceConfig(view_external_id="CogniteAsset")
     name: str
-    lives_in: InstanceId
-    cars: list[InstanceId]
 
-    # You need to implement the end_id_factory so the model can build the edge ids automatically.
-    def edge_id_factory(
-        self, target_node: InstanceId, edge_type: InstanceId
-    ) -> InstanceId:
+aggregate_statement = aggregate(CogniteAssetByName, "count").group_by(
+    col(CogniteAssetByName.name)
+)
+
+aggregate_result = engine.aggregate(aggregate_statement)
+```
+
+---
+
+## 🗑️ Deleting Instances
+
+```python
+instances_to_delete = engine.search(
+    search(CogniteAsset)
+    .where(col(CogniteAsset.aliases).contains_any_(["my_alias"]))
+    .query_by("my fuzzy name", [CogniteAsset.name])
+)
+
+engine.delete(instances_to_delete)
+```
+
+---
+
+## ✏️ Upserting Instances
+
+```python
+from industrial_model import WritableViewInstance, InstanceId
+
+class CogniteAsset(WritableViewInstance):
+    view_config = ViewInstanceConfig(view_external_id="CogniteAsset")
+    name: str
+    aliases: list[str]
+
+    def edge_id_factory(self, target_node: InstanceId, edge_type: InstanceId) -> InstanceId:
         return InstanceId(
             external_id=f"{self.external_id}-{target_node.external_id}-{edge_type.external_id}",
             space=self.space,
         )
-
-statement = select(WritablePerson).where(
-    (WritablePerson.external_id == "Lucas") 
-)
-
-person = engine.query_all_pages(statement)[0]
-
-person.lives_in = InstanceId(external_id="br", space="data-space")
-person.cars.clear() # Gonna remove all car edges from the person
-
-engine.upsert([person])
-
 ```
 
+```python
+instances = engine.query_all_pages(
+    select(CogniteAsset).where(col(CogniteAsset.aliases).contains_any_(["my_alias"]))
+)
+
+for instance in instances:
+    instance.aliases.append("new_alias")
+
+engine.upsert(instances, replace=False)
+```
+
+---
+
+## ✏️ Async version
+
+All methods have a async equivalent version
+
+```python
+await engine.query_async(...)
+await engine.query_all_pages_async(...)
+await engine.search_async(...)
+await engine.aggregate_async(...)
+await engine.delete_async(...)
+await engine.upsert_async(...)
+```
 
 ---

@@ -215,12 +215,13 @@ wheels = [
 
 [[package]]
 name = "industrial-model"
-version = "0.1.10"
+version = "0.1.40"
 source = { editable = "." }
 dependencies = [
     { name = "anyio" },
     { name = "cognite-sdk" },
     { name = "pydantic" },
+    { name = "pyyaml" },
 ]
 
 [package.dev-dependencies]
@@ -228,7 +229,6 @@ dev = [
     { name = "dotenv" },
     { name = "mypy" },
     { name = "pytest" },
-    { name = "pyyaml" },
     { name = "ruff" },
     { name = "types-pyyaml" },
 ]
@@ -238,6 +238,7 @@ requires-dist = [
     { name = "anyio", specifier = ">=4.9.0" },
     { name = "cognite-sdk", specifier = ">=7.75.0" },
     { name = "pydantic", specifier = ">=2.11.4" },
+    { name = "pyyaml", specifier = ">=6.0.2" },
 ]
 
 [package.metadata.requires-dev]
@@ -245,7 +246,6 @@ dev = [
     { name = "dotenv", specifier = ">=0.9.9" },
     { name = "mypy", specifier = ">=1.15.0" },
     { name = "pytest", specifier = ">=8.3.5" },
-    { name = "pyyaml", specifier = ">=6.0.2" },
     { name = "ruff", specifier = ">=0.11.8" },
     { name = "types-pyyaml", specifier = ">=6.0.12.20250402" },
 ]
