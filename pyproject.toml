@@ -1,0 +1,66 @@
+[project]
+name = "industrial-model"
+version = "1.0.0"
+description = "Industrial Model ORM"
+readme = "README.md"
+requires-python = ">=3.11"
+authors = [{ name = "Lucas Alves", email = "lucasrosaalves@gmail.com" }]
+dependencies = [
+    "anyio>=4.9.0",
+    "cognite-sdk>=7.75.0",
+    "pydantic>=2.11.4",
+    "pyyaml>=6.0.2",
+]
+classifiers = [
+    "Programming Language :: Python",
+    'Programming Language :: Python :: 3',
+    'Programming Language :: Python :: 3 :: Only',
+    'Programming Language :: Python :: 3.11',
+    'Programming Language :: Python :: 3.12',
+    'Programming Language :: Python :: 3.13',
+    "Topic :: Database",
+    "Topic :: Database :: Database Engines/Servers",
+    "Typing :: Typed",
+]
+
+[build-system]
+requires = ["hatchling >= 1.27"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build]
+packages = ["industrial_model"]
+
+[project.urls]
+Homepage = 'https://github.com/lucasrosaalves/industrial-model'
+Source = 'https://github.com/lucasrosaalves/industrial-model'
+
+[tool.uv]
+dev-dependencies = [
+    "dotenv>=0.9.9",
+    "mypy>=1.15.0",
+    "pytest>=8.3.5",
+    "ruff>=0.11.8",
+    "types-pyyaml>=6.0.12.20250402",
+]
+
+[tool.mypy]
+strict = true
+
+[tool.ruff]
+line-length = 88
+
+[tool.ruff.lint]
+select = [
+    "E",  # pycodestyle errors
+    "W",  # pycodestyle warnings
+    "F",  # pyflakes
+    "I",  # isort
+    "B",  # flake8-bugbear
+    "C4", # flake8-comprehensions
+    "UP", # pyupgrade
+]
+ignore = [
+    "B008", # do not perform function calls in argument defaults
+    "C901", # too complex
+    "W191", # indentation contains tabs
+]
