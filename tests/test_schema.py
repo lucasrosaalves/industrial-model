@@ -25,9 +25,9 @@ def test_get_schema_properties() -> None:
     for entity, expected_schema in _get_test_schema().items():
         schema = get_schema_properties(entity, SEP)
 
-        assert sorted(schema) == sorted(
-            expected_schema
-        ), f"{entity.__name__}: Expected {expected_schema}"
+        assert sorted(schema) == sorted(expected_schema), (
+            f"{entity.__name__}: Expected {expected_schema}"
+        )
 
 
 def _get_test_schema() -> dict[type[BaseModel], list[str]]:

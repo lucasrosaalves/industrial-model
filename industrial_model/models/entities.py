@@ -73,9 +73,9 @@ class ViewInstance(InstanceId):
         return cls.view_config.get("view_external_id") or cls.__name__
 
     def get_edge_metadata(self, property: Column | str | Any) -> list[EdgeContainer]:
-        assert isinstance(
-            property, Column | str
-        ), f"Expected property to be Column, or str, got {type(property).__name__}"
+        assert isinstance(property, Column | str), (
+            f"Expected property to be Column, or str, got {type(property).__name__}"
+        )
         identifier = property.property if isinstance(property, Column) else property
 
         edge_map_key = self.get_field_alias(identifier) or self.get_field_name(
