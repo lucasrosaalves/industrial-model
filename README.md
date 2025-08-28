@@ -285,7 +285,7 @@ instances = engine.query_all_pages(
 for instance in instances:
     instance.aliases.append("new_alias")
 
-engine.upsert(instances, replace=False)
+engine.upsert(instances, replace=False, remove_unset=False)
 ```
 
 ---

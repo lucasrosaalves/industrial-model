@@ -25,14 +25,16 @@ class UpsertMapper:
     def __init__(self, view_mapper: ViewMapper):
         self._view_mapper = view_mapper
 
-    def map(self, instances: list[TWritableViewInstance]) -> UpsertOperation:
+    def map(
+        self, instances: list[TWritableViewInstance], remove_unset: bool
+    ) -> UpsertOperation:
         nodes: dict[tuple[str, str], NodeApply] = {}
         edges: dict[tuple[str, str], EdgeApply] = {}
         edges_to_delete: dict[tuple[str, str], EdgeContainer] = {}
 
         for instance in instances:
             entry_nodes, entry_edges, entry_edges_to_delete = self._map_instance(
-                instance
+                instance, remove_unset
             )
 
             nodes[instance.as_tuple()] = entry_nodes
@@ -48,7 +50,7 @@ class UpsertMapper:
         )
 
     def _map_instance(
-        self, instance: TWritableViewInstance
+        self, instance: TWritableViewInstance, remove_unset: bool
     ) -> tuple[NodeApply, list[EdgeApply], list[EdgeContainer]]:
         view = self._view_mapper.get_view(instance.get_view_external_id())
 
@@ -59,6 +61,10 @@ class UpsertMapper:
             property_key = instance.get_field_name(property_name)
             if not property_key:
                 continue
+
+            if remove_unset and property_key not in instance.model_fields_set:
+                continue
+
             entry = instance.__getattribute__(property_key)
 
             if isinstance(property, MappedProperty):

@@ -98,17 +98,23 @@ class Engine:
         return await run_async(self.aggregate, statement)
 
     def upsert(
-        self, entries: list[TWritableViewInstance], replace: bool = False
+        self,
+        entries: list[TWritableViewInstance],
+        replace: bool = False,
+        remove_unset: bool = False,
     ) -> None:
         if not entries:
             return
 
-        return self._cognite_adapter.upsert(entries, replace)
+        return self._cognite_adapter.upsert(entries, replace, remove_unset)
 
     async def upsert_async(
-        self, entries: list[TWritableViewInstance], replace: bool = False
+        self,
+        entries: list[TWritableViewInstance],
+        replace: bool = False,
+        remove_unset: bool = False,
     ) -> None:
-        return await run_async(self.upsert, entries, replace)
+        return await run_async(self.upsert, entries, replace, remove_unset)
 
     def delete(self, nodes: list[TViewInstance]) -> None:
         self._cognite_adapter.delete(

@@ -55,9 +55,12 @@ class AsyncEngine:
         return await self._engine.aggregate_async(statement)
 
     async def upsert_async(
-        self, entries: list[TWritableViewInstance], replace: bool = False
+        self,
+        entries: list[TWritableViewInstance],
+        replace: bool = False,
+        remove_unset: bool = False,
     ) -> None:
-        return await self._engine.upsert_async(entries, replace)
+        return await self._engine.upsert_async(entries, replace, remove_unset)
 
     async def delete_async(self, nodes: list[TViewInstance]) -> None:
         return await self._engine.delete_async(nodes)
