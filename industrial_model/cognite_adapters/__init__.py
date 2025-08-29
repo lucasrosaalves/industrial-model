@@ -124,20 +124,29 @@ class CogniteAdapter:
         return data
 
     def upsert(
-        self, entries: list[TWritableViewInstance], replace: bool = False
+        self,
+        entries: list[TWritableViewInstance],
+        replace: bool = False,
+        remove_unset: bool = False,
     ) -> None:
         logger = logging.getLogger(__name__)
-        operation = self._upsert_mapper.map(entries)
+        operation = self._upsert_mapper.map(entries, remove_unset)
 
         for node_chunk in operation.chunk_nodes():
-            logger.debug(f"Upserting {len(node_chunk)} nodes (replace={replace})")
+            logger.debug(
+                f"Upserting {len(node_chunk)} nodes (replace={replace}, "
+                "remove_unset={remove_unset})"
+            )
             self._cognite_client.data_modeling.instances.apply(
                 nodes=node_chunk,
                 replace=replace,
             )
 
         for edge_chunk in operation.chunk_edges():
-            logger.debug(f"Upserting {len(edge_chunk)} edges (replace={replace})")
+            logger.debug(
+                f"Upserting {len(edge_chunk)} edges (replace={replace},"
+                "remove_unset={remove_unset})"
+            )
             self._cognite_client.data_modeling.instances.apply(
                 edges=edge_chunk,
                 replace=replace,
