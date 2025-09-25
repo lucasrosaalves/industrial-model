@@ -26,7 +26,13 @@ from industrial_model.models import (
     get_parent_and_children_nodes,
 )
 
-NODE_PROPERTIES = {"externalId", "space", "createdTime", "deletedTime"}
+NODE_PROPERTIES = {
+    "externalId",
+    "space",
+    "createdTime",
+    "deletedTime",
+    "lastUpdatedTime",
+}
 INTANCE_TYPE = Literal["node", "edge"]
 
 
