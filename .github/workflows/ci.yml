@@ -8,6 +8,8 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    environment:
+      name: prod
     env:
       CDF_CLIENT_NAME: ${{ secrets.CDF_CLIENT_NAME }}
       CDF_CLUSTER: ${{ secrets.CDF_CLUSTER }}
