@@ -1,5 +1,5 @@
 sh ./scripts/lint.sh
-pytest
+uv run pytest
 rm -rf dist
 uv sync
 uv build
