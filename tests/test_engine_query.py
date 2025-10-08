@@ -1,4 +1,4 @@
-from industrial_model import PaginatedResult, col, select
+from industrial_model import Engine, PaginatedResult, col, select
 
 from .hubs import generate_engine
 from .models import CogniteAsset, CogniteAssetType, CogniteDescribable, CogniteEquipment
@@ -50,17 +50,20 @@ def test_engine_query_equipment() -> None:
 def test_engine_query_asset() -> None:
     engine = generate_engine()
 
+    spaces = _get_spaces(engine)
     select_statements = [
         select(CogniteAsset)
         .where(
-            col(CogniteAsset.parent).nested_(CogniteAsset.external_id == "PARENT-123")
+            col(CogniteAsset.space).in_(spaces),
+            col(CogniteAsset.parent).nested_(CogniteAsset.external_id == "PARENT-123"),
         )
         .limit(1),
         select(CogniteAsset)
         .where(
+            col(CogniteAsset.space).in_(spaces),
             col(CogniteAsset.path).contains_any_(
                 [{"externalId": "CHILD-456", "space": "cdf_cdm"}]
-            )
+            ),
         )
         .limit(1),
     ]
@@ -68,3 +71,7 @@ def test_engine_query_asset() -> None:
     for statement in select_statements:
         result = engine.query(statement)
         assert isinstance(result, PaginatedResult)
+
+
+def _get_spaces(engine: Engine) -> list[str]:
+    return engine._cognite_adapter._cognite_client.data_modeling.spaces.list(1).as_ids()
