@@ -94,7 +94,7 @@ class QueryResultMapper:
 
             visited.add(identify)
             properties = node.properties.get(view_id, {})
-            if len(properties) == 0:
+            if len(properties) == 0 and view_id not in node.properties:
                 continue
 
             edges_mapping: dict[str, list[EdgeContainer]] = {}
