@@ -220,7 +220,11 @@ from industrial_model import search
 search_statement = (
     search(CogniteAsset)
     .where(col(CogniteAsset.aliases).contains_any_(["my_alias"]))
-    .query_by("my fuzzy name", [CogniteAsset.name])
+    .query_by(
+        query="my fuzzy name",
+        query_properties=[CogniteAsset.name],
+        operator="AND",
+    )
 )
 
 search_result = engine.search(search_statement)

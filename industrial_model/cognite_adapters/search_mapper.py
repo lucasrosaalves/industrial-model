@@ -4,7 +4,7 @@ import cognite.client.data_classes.filters as filters
 from cognite.client.data_classes.data_modeling import InstanceSort, View
 
 from industrial_model.models import TViewInstance
-from industrial_model.statements import SearchStatement
+from industrial_model.statements import SearchOperationTypes, SearchStatement
 
 from .filter_mapper import (
     FilterMapper,
@@ -21,6 +21,7 @@ class SearchQuery:
     query_properties: list[str] | None
     limit: int
     sort: list[InstanceSort]
+    operator: SearchOperationTypes | None
 
 
 class SearchMapper:
@@ -47,4 +48,5 @@ class SearchMapper:
             query_properties=statement_values.query_properties,
             limit=statement_values.limit,
             sort=sort_clauses,
+            operator=statement_values.search_operator,
         )
