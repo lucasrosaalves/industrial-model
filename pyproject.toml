@@ -7,7 +7,7 @@ requires-python = ">=3.11"
 authors = [{ name = "Lucas Alves", email = "lucasrosaalves@gmail.com" }]
 dependencies = [
     "anyio>=4.9.0",
-    "cognite-sdk>=7.75.0",
+    "cognite-sdk>=7.87.0",
     "pydantic>=2.11.4",
     "pyyaml>=6.0.2",
 ]
