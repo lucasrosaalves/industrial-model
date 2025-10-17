@@ -1,5 +1,4 @@
 from dataclasses import dataclass
-from typing import Literal
 
 import cognite.client.data_classes.filters as filters
 from cognite.client.data_classes.data_modeling import InstanceSort, View
