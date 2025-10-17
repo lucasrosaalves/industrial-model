@@ -128,7 +128,7 @@ wheels = [
 
 [[package]]
 name = "cognite-sdk"
-version = "7.75.0"
+version = "7.87.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "msal" },
@@ -138,9 +138,9 @@ dependencies = [
     { name = "requests-oauthlib" },
     { name = "typing-extensions" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/ca/98/79adaf97726a1ad1fd039f018cd6cf5a667c8aa3a2bbc630f54e2450cb90/cognite_sdk-7.75.0.tar.gz", hash = "sha256:a3a4ab7c600ac1a4e3dcba318b03b2450ece0bbb126c2d9af129b2f36217bc9e", size = 500235 }
+sdist = { url = "https://files.pythonhosted.org/packages/32/e9/2a57b40ab6cdb447f6aa26a2e5864ac31b0ee94d6549bc4a29f49c881bcf/cognite_sdk-7.87.0.tar.gz", hash = "sha256:7ef2d21a8272622d3cdb989635c523cf24bcb7251c331b27701c6430f93ed2e0", size = 536887 }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/85/08/38477bff9eaa7a153847718d50faea698ef68a998a3c69fdba09ad4b919a/cognite_sdk-7.75.0-py3-none-any.whl", hash = "sha256:0696ff265e11ae3a2351760def6f2bd04df1e2524bf855c5d7920a76b123d5e0", size = 623162 },
+    { url = "https://files.pythonhosted.org/packages/ce/01/92389c6ef491f420a78e79a1242c10e361fc70f97b77c32cd19570e57e12/cognite_sdk-7.87.0-py3-none-any.whl", hash = "sha256:8478463341d752e5ad5116d9ae51e7143a591b5551eebbbbfd7ee2d12d90ba36", size = 683532 },
 ]
 
 [[package]]
@@ -236,7 +236,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "anyio", specifier = ">=4.9.0" },
-    { name = "cognite-sdk", specifier = ">=7.75.0" },
+    { name = "cognite-sdk", specifier = ">=7.87.0" },
     { name = "pydantic", specifier = ">=2.11.4" },
     { name = "pyyaml", specifier = ">=6.0.2" },
 ]
