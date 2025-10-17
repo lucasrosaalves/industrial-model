@@ -16,6 +16,7 @@ from .expressions import (
 
 T = TypeVar("T")
 AggregateTypes = Literal["count", "avg", "min", "max", "sum"]
+SearchOperationTypes = Literal["OR", "AND"]
 
 
 def _create_column(property: str | Column | Any) -> Column:
@@ -36,6 +37,7 @@ class BaseStatementValues:
 
     query: str | None = field(init=False, default=None)
     query_properties: list[str] | None = field(init=False, default=None)
+    search_operator: SearchOperationTypes | None = field(init=False, default=None)
 
 
 @dataclass
@@ -106,6 +108,7 @@ class SearchStatement(BaseStatement[T]):
         self,
         query: str,
         query_properties: list[Column] | list[str] | list[Any] | None = None,
+        operation: SearchOperationTypes | None = None,
     ) -> Self:
         self._values.query = query
         self._values.query_properties = (
@@ -120,6 +123,7 @@ class SearchStatement(BaseStatement[T]):
             if query_properties
             else None
         )
+        self._values.search_operator = operation
         return self
 
 
