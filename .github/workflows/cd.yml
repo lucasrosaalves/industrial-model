@@ -1,13 +1,11 @@
 name: cd
 
 on:
-  pull_request:
-    types: [closed]
+  push:
     branches: [main]
 
 jobs:
   build-and-publish:
-    if: github.event.pull_request.merged == true
     runs-on: ubuntu-latest
     environment:
       name: prod
