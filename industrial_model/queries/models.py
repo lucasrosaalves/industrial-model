@@ -4,6 +4,7 @@ from industrial_model.models import RootModel, TAggregatedViewInstance, TViewIns
 from industrial_model.statements import (
     AggregateTypes,
     AggregationStatement,
+    SearchOperationTypes,
     SearchStatement,
     Statement,
     aggregate,
@@ -37,6 +38,7 @@ class BasePaginatedQuery(BaseQuery):
 class BaseSearchQuery(RootModel):
     query: str | None = None
     query_properties: list[Any] | None = None
+    query_operator: SearchOperationTypes | None = None
     limit: int = 1000
 
     def to_statement(
@@ -45,7 +47,11 @@ class BaseSearchQuery(RootModel):
         statement = search(entity)
         _set_base_statement_params(self, statement)
         if self.query:
-            statement.query_by(self.query, self.query_properties)
+            statement.query_by(
+                self.query,
+                self.query_properties,
+                self.query_operator,
+            )
         statement.limit(self.limit)
 
         return statement
