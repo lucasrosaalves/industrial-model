@@ -59,6 +59,7 @@ class CogniteAdapter:
             properties=search_query.query_properties,
             limit=search_query.limit,
             sort=search_query.sort,
+            operator=search_query.operator or "OR",
         )
 
         return self._result_mapper.nodes_to_dict(data)
