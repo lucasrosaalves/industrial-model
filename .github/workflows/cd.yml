@@ -33,8 +33,8 @@ jobs:
       - name: Sync deps
         run: uv sync --locked --all-extras --dev
 
-      - name: Build
-        run: source ./scripts/build.sh
+      - name: Build + Test
+        run: source ./scripts/test.sh
 
       - name: Publish
         uses: pypa/gh-action-pypi-publish@release/v1
