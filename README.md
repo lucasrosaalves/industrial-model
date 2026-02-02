@@ -10,7 +10,8 @@ from pathlib import Path
 
 class Asset(ViewInstance):
     view_config = ViewInstanceConfig(
-        instance_spaces_prefix="instace_data-",  # Define the scope of your instance spaces to improve performance.
+        view_external_id="CogniteAsset", # Map to the view externalId. If the class name is the same as the view external id, you do not need to configure this property.
+        instance_spaces_prefix="instance_data-",  # Define the scope of your instance spaces to improve performance.
     )
     name: str
     description: str | None = None
