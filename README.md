@@ -1,21 +1,36 @@
 # 📦 industrial-model
 
-`industrial-model` is a Python ORM-style abstraction for querying views in Cognite Data Fusion (CDF). It provides a declarative and type-safe way to model CDF views using `pydantic`, build queries, and interact with the CDF API in a Pythonic fashion.
+**Type-safe, Pythonic access to Cognite Data Fusion views.**
+
+`industrial-model` is a Python ORM for Cognite Data Fusion (CDF). Define views as Pydantic models, build queries with a fluent API, and work with CDF in the same way you write the rest of your Python—with types, autocomplete, and clear errors.
+
+```python
+from industrial_model import Engine, ViewInstance, ViewInstanceConfig, select
+from pathlib import Path
+
+class Asset(ViewInstance):
+    view_config = ViewInstanceConfig(
+        instance_spaces_prefix="instace_data-",  # Define the scope of your instance spaces to improve performance.
+    )
+    name: str
+    description: str | None = None
+
+engine = Engine.from_config_file(Path("cognite-sdk-config.yaml"))
+results = engine.query(select(Asset).limit(10))
+# results.data → list[Asset], fully typed
+```
 
 ---
 
 ## ✨ Features
 
-- **Declarative Models**: Define CDF views using Pydantic-style classes with type hints
-- **Type-Safe Queries**: Build complex queries using fluent and composable filters
-- **Flexible Querying**: Support for standard queries, paginated queries, and full page retrieval
-- **Advanced Filtering**: Rich set of filter operators including nested queries, edge filtering, and boolean logic
-- **Search Capabilities**: Full-text fuzzy search with configurable operators
-- **Aggregations**: Count, sum, average, min, max with grouping support
-- **Write Operations**: Upsert and delete instances with edge relationship support
-- **Automatic Aliasing**: Built-in support for field aliases and camelCase transformation
-- **Async Support**: All operations have async equivalents
-- **Validation Modes**: Configurable error handling for data validation
+- **Declarative models** — Pydantic-style classes with type hints; only the fields you need
+- **Type-safe queries** — Fluent, composable filters with full IDE support
+- **Query, search, aggregate** — Standard and paginated queries, full-text search, count/sum/avg/min/max
+- **Rich filtering** — Nested queries, edge filters, boolean logic, list/string operators
+- **Read and write** — Upsert and delete with edge relationship support
+- **Async** — All operations have async equivalents
+- **Configurable validation** — Choose how to handle validation errors per request
 
 ---
 
@@ -29,22 +44,24 @@ pip install industrial-model
 
 ## 📚 Table of Contents
 
-1. [Getting Started](#-getting-started)
-2. [Model Definition](#-model-definition)
-3. [Engine Setup](#-engine-setup)
-4. [Querying Data](#-querying-data)
-5. [Filtering](#-filtering)
-6. [Search](#-search)
-7. [Aggregations](#-aggregations)
-8. [Write Operations](#-write-operations)
-9. [Advanced Features](#-advanced-features)
-10. [Async Operations](#-async-operations)
+| Section | What you'll find |
+|--------|-------------------|
+| [Getting Started](#-getting-started) | Prerequisites and example schema |
+| [Model Definition](#-model-definition) | Views as Pydantic models, aliases, config |
+| [Engine Setup](#-engine-setup) | Config file or manual `Engine` / `AsyncEngine` |
+| [Querying Data](#-querying-data) | `select()`, pagination, sorting, validation |
+| [Filtering](#-filtering) | Comparison, list, string, nested, and edge filters |
+| [Search](#-search) | Full-text search with filters |
+| [Aggregations](#-aggregations) | Count, sum, avg, min, max, with grouping |
+| [Write Operations](#-write-operations) | Upsert and delete |
+| [Advanced Features](#-advanced-features) | ID generation, `InstanceId`, result helpers |
+| [Async Operations](#-async-operations) | `AsyncEngine` and async API |
 
 ---
 
 ## 🚀 Getting Started
 
-This guide uses the `CogniteAsset` view from the `CogniteCore` data model (version `v1`) as an example.
+The quick example above shows the core flow: **model → engine → query**. The rest of this guide uses the `CogniteAsset` view from the `CogniteCore` data model (version `v1`).
 
 ### Sample GraphQL Schema
 
@@ -62,6 +79,8 @@ type CogniteAsset {
 ---
 
 ## 🏗️ Model Definition
+
+Models map CDF views to Python classes. Inherit from `ViewInstance` (or `WritableViewInstance` for writes) and declare only the properties you need.
 
 ### Basic Model
 
@@ -162,6 +181,8 @@ class CogniteAssetByName(AggregatedViewInstance):
 
 ## ⚙️ Engine Setup
 
+The engine connects to CDF and knows which data model and version to use. You can load it from a config file or build it from an existing `CogniteClient`.
+
 ### Option A: From Configuration File
 
 Create a `cognite-sdk-config.yaml` file:
@@ -226,6 +247,8 @@ async_engine = AsyncEngine.from_config_file(Path("cognite-sdk-config.yaml"))
 ---
 
 ## 🔎 Querying Data
+
+Use `select()` to build statements, then run them with `engine.query()` or `engine.query_all_pages()`. Results are typed and paginated.
 
 ### Basic Query
 
@@ -297,6 +320,8 @@ results = engine.query(statement, validation_mode="ignoreOnError")
 ---
 
 ## 🔍 Filtering
+
+Add `.where(...)` to narrow results. Use `col()` for operators like `in_()`, `prefix()`, and `nested_()`; use `==`, `!=`, `&`, and `|` where they apply.
 
 ### Comparison Operators
 
@@ -511,6 +536,8 @@ statement = select(CogniteAsset).where(
 
 ## 🔍 Search
 
+Full-text search over view instances. Combine `search()` with `.where()` filters and `.query_by()` to search specific properties.
+
 ### Search with Filters
 
 ```python
@@ -579,6 +606,8 @@ results = engine.search(search_statement)
 ---
 
 ## 📊 Aggregations
+
+Use `AggregatedViewInstance` and `aggregate()` for count, sum, avg, min, and max—optionally with `.group_by()` and `.where()`.
 
 ### Count Aggregation
 
@@ -698,6 +727,8 @@ results = engine.aggregate(statement)
 
 ## ✏️ Write Operations
 
+Use `WritableViewInstance` and implement `edge_id_factory` for models with relationships. Then `engine.upsert()` and `engine.delete()` work on lists of instances.
+
 ### Upsert Instances
 
 ```python
@@ -780,6 +811,7 @@ engine.delete(instances_to_delete)
 
 ## 🚀 Advanced Features
 
+Utilities for ID generation, `InstanceId` handling, and working with `PaginatedResult`.
 
 ### Generate Model IDs
 
@@ -860,7 +892,7 @@ if result.has_next_page:
 
 ## ⚡ Async Operations
 
-All engine methods have async equivalents:
+Use `AsyncEngine` for async code. Every sync method has an `_async` counterpart (e.g. `query_async`, `upsert_async`).
 
 ### AsyncEngine Setup
 
@@ -931,7 +963,7 @@ asyncio.run(main())
 
 ## 📝 Complete Example
 
-Here's a complete example demonstrating multiple features:
+Putting it together: query with filters, search, aggregate, upsert, and delete in one script.
 
 ```python
 from industrial_model import (
@@ -1034,7 +1066,7 @@ engine.delete(obsolete)
 
 ## 🎯 Best Practices
 
-1. **Model Definition**: Only include fields you actually need in your models
+1. **Models** — Declare only the fields you use; smaller models stay clearer and faster
 2. **View Configuration**: Use `instance_spaces` or `instance_spaces_prefix` to optimize queries
 3. **Pagination**: Use `query_all_pages()` for small datasets, `query()` with cursors for large datasets
 4. **Validation**: Use `ignoreOnError` mode when dealing with potentially inconsistent data
