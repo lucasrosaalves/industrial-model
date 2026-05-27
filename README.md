@@ -41,6 +41,12 @@ results = engine.query(select(Asset).limit(10))
 pip install industrial-model
 ```
 
+For `AsyncEngine` and `_async` methods, install the async extra:
+
+```bash
+pip install "industrial-model[async]"
+```
+
 ---
 
 ## 📚 Table of Contents
@@ -894,6 +900,12 @@ if result.has_next_page:
 ## ⚡ Async Operations
 
 Use `AsyncEngine` for async code. Every sync method has an `_async` counterpart (e.g. `query_async`, `upsert_async`).
+
+Install the async extra before using these APIs:
+
+```bash
+pip install "industrial-model[async]"
+```
 
 ### AsyncEngine Setup
 

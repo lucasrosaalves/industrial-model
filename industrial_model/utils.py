@@ -1,14 +1,18 @@
 from collections.abc import Callable
 from datetime import datetime
-from typing import (
-    ParamSpec,
-    TypeVar,
-)
+from typing import TypeVar
 
-from anyio import to_thread
+try:
+    from anyio.to_thread import run_sync as _run_sync
+except ImportError:
+    _run_sync = None  # type: ignore[assignment]
 
 T_Retval = TypeVar("T_Retval")
-P = ParamSpec("P")
+
+_ASYNC_INSTALL_MSG = (
+    "Async features require the optional async extra. "
+    'Install it with: pip install "industrial-model[async]"'
+)
 
 
 def datetime_to_ms_iso_timestamp(dt: datetime) -> str:
@@ -24,4 +28,7 @@ async def run_async(
     *args: object,
     cancellable: bool = False,
 ) -> T_Retval:
-    return await to_thread.run_sync(func, *args, cancellable=cancellable)
+    if _run_sync is None:
+        raise RuntimeError(_ASYNC_INSTALL_MSG)
+
+    return await _run_sync(func, *args, abandon_on_cancel=cancellable)

@@ -1,2 +1,1 @@
-sh ./scripts/build.sh
-uv run pytest
+uv run --extra async pytest

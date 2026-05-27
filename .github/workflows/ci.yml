@@ -22,3 +22,6 @@ jobs:
 
       - name: Build
         run: source ./scripts/build.sh
+
+      - name: Test
+        run: source ./scripts/test.sh
