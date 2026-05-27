@@ -1,5 +1,6 @@
 from typing import Literal
 
+RelationMode = Literal["instanceId", "model"]
 SORT_DIRECTION = Literal["ascending", "descending"]
 LEAF_EXPRESSION_OPERATORS = Literal[
     "==",

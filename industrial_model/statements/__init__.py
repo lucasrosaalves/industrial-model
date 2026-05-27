@@ -1,7 +1,7 @@
 from dataclasses import dataclass, field
 from typing import Any, Generic, Literal, Self, TypeVar
 
-from industrial_model.constants import DEFAULT_LIMIT, SORT_DIRECTION
+from industrial_model.constants import DEFAULT_LIMIT, SORT_DIRECTION, RelationMode
 
 from .expressions import (
     BoolExpression,
@@ -32,6 +32,7 @@ class BaseStatementValues:
     sort_clauses: list[tuple[Column, SORT_DIRECTION]] = field(
         init=False, default_factory=list
     )
+    relation_modes: dict[str, RelationMode] = field(init=False, default_factory=dict)
     limit: int = field(init=False, default=DEFAULT_LIMIT)
     cursor: str | None = field(init=False, default=None)
 
@@ -99,6 +100,15 @@ class Statement(BaseStatement[T]):
                 expressions_,
             )
         )
+        return self
+
+    def relation_mode(self, property: str | Column | Any, mode: RelationMode) -> Self:
+        relation_ = (
+            _create_column(property).property
+            if not isinstance(property, str)
+            else property
+        )
+        self._values.relation_modes[relation_] = mode
         return self
 
 
@@ -193,6 +203,7 @@ __all__ = [
     "Expression",
     "LeafExpression",
     "BoolExpression",
+    "RelationMode",
     "and_",
     "not_",
     "or_",

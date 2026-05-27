@@ -103,6 +103,20 @@ def test_statement_where_edge() -> None:
     assert len(values.where_edge_clauses[0][1]) == 1
 
 
+def test_statement_relation_mode() -> None:
+    statement = select(TestModel).relation_mode(TestModel.name, mode="instanceId")
+
+    values = statement.get_values()
+    assert values.relation_modes == {"name": "instanceId"}
+
+
+def test_statement_without_relation_mode() -> None:
+    statement = select(TestModel)
+
+    values = statement.get_values()
+    assert values.relation_modes == {}
+
+
 def test_search_statement_creation() -> None:
     """Test creating a search statement."""
     statement = search(TestModel)

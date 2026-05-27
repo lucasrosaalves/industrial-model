@@ -48,3 +48,12 @@ def test_query() -> None:
     target = statement.get_values().where_clauses[0]
     assert isinstance(target, BoolExpression)
     assert len(target.filters) == 2
+
+
+def test_query_relation_projection() -> None:
+    statement = DescribableEntityQuery(
+        relation_modes={"parent": "instanceId"}
+    ).to_statement(CogniteDescribable)
+
+    values = statement.get_values()
+    assert values.relation_modes == {"parent": "instanceId"}
