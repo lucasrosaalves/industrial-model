@@ -59,7 +59,12 @@ class QueryMapper:
         }
         select_: dict[str, Select] = {}
 
-        relations = get_schema_properties(statement.entity, NESTED_SEP, root_node)
+        relations = get_schema_properties(
+            statement.entity,
+            NESTED_SEP,
+            root_node,
+            statement_values.relation_modes,
+        )
 
         edge_filters = self._filter_mapper.map_edges(
             statement_values.where_edge_clauses, root_view, NESTED_SEP

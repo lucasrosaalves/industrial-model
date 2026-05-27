@@ -1,5 +1,8 @@
 from typing import Any
 
+from pydantic import Field
+
+from industrial_model.constants import RelationMode
 from industrial_model.models import RootModel, TAggregatedViewInstance, TViewInstance
 from industrial_model.statements import (
     AggregateTypes,
@@ -16,9 +19,13 @@ from .utils import extract_base_statement_params
 
 
 class BaseQuery(RootModel):
+    relation_modes: dict[str, RelationMode] = Field(default_factory=dict)
+
     def to_statement(self, entity: type[TViewInstance]) -> Statement[TViewInstance]:
         statement = select(entity)
         _set_base_statement_params(self, statement)
+        for relation, mode in self.relation_modes.items():
+            statement.relation_mode(relation, mode)
 
         return statement
 

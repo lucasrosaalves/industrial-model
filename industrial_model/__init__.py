@@ -1,4 +1,5 @@
 from .config import DataModelId
+from .constants import RelationMode
 from .engines import AsyncEngine, Engine
 from .models import (
     AggregatedViewInstance,
@@ -35,6 +36,7 @@ __all__ = [
     "AsyncEngine",
     "PaginatedResult",
     "RootModel",
+    "RelationMode",
     "ViewInstanceConfig",
     "WritableViewInstance",
 ]
