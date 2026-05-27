@@ -85,8 +85,6 @@ class Engine:
     async def delete_async(self, nodes: list[TViewInstance]) -> None:
         await self._cognite_adapter.delete(nodes)
 
-    # ---------------------------------------------------------------- sync (wrap async)
-
     @staticmethod
     def _run_sync(coro: Coroutine[Any, Any, _T]) -> _T:
         try:
