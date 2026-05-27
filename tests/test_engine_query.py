@@ -1,3 +1,5 @@
+import asyncio
+
 from industrial_model import Engine, PaginatedResult, col, select
 
 from .hubs import generate_engine
@@ -74,4 +76,9 @@ def test_engine_query_asset() -> None:
 
 
 def _get_spaces(engine: Engine) -> list[str]:
-    return engine._cognite_adapter._cognite_client.data_modeling.spaces.list(1).as_ids()
+    async def _fetch() -> list[str]:
+        return (
+            await engine._cognite_adapter._cognite_client.data_modeling.spaces.list(1)
+        ).as_ids()
+
+    return asyncio.run(_fetch())

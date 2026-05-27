@@ -3,15 +3,15 @@
 from industrial_model import PaginatedResult, ViewInstance
 
 
-class TestModel(ViewInstance):
+class SampleModel(ViewInstance):
     name: str
 
 
 def test_paginated_result_creation() -> None:
     """Test creating a PaginatedResult."""
     data = [
-        TestModel(external_id="1", space="space", name="Test1"),
-        TestModel(external_id="2", space="space", name="Test2"),
+        SampleModel(external_id="1", space="space", name="Test1"),
+        SampleModel(external_id="2", space="space", name="Test2"),
     ]
 
     result = PaginatedResult(
@@ -27,7 +27,7 @@ def test_paginated_result_creation() -> None:
 
 def test_paginated_result_no_next_page() -> None:
     """Test PaginatedResult with no next page."""
-    data = [TestModel(external_id="1", space="space", name="Test1")]
+    data = [SampleModel(external_id="1", space="space", name="Test1")]
 
     result = PaginatedResult(
         data=data,
@@ -42,8 +42,8 @@ def test_paginated_result_no_next_page() -> None:
 def test_paginated_result_first_or_default() -> None:
     """Test first_or_default method."""
     data = [
-        TestModel(external_id="1", space="space", name="Test1"),
-        TestModel(external_id="2", space="space", name="Test2"),
+        SampleModel(external_id="1", space="space", name="Test1"),
+        SampleModel(external_id="2", space="space", name="Test2"),
     ]
 
     result = PaginatedResult(
@@ -60,7 +60,7 @@ def test_paginated_result_first_or_default() -> None:
 
 def test_paginated_result_first_or_default_empty() -> None:
     """Test first_or_default with empty data."""
-    result: PaginatedResult[TestModel] = PaginatedResult(
+    result: PaginatedResult[SampleModel] = PaginatedResult(
         data=[],
         has_next_page=False,
         next_cursor=None,
@@ -72,7 +72,7 @@ def test_paginated_result_first_or_default_empty() -> None:
 
 def test_paginated_result_empty() -> None:
     """Test empty PaginatedResult."""
-    result: PaginatedResult[TestModel] = PaginatedResult(
+    result: PaginatedResult[SampleModel] = PaginatedResult(
         data=[],
         has_next_page=False,
         next_cursor=None,

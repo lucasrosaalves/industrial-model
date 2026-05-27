@@ -41,6 +41,8 @@ results = engine.query(select(Asset).limit(10))
 pip install industrial-model
 ```
 
+Async operations are included through the native async support in `cognite-sdk` v8.
+
 ---
 
 ## 📚 Table of Contents
@@ -236,7 +238,8 @@ engine = Engine(
 
 ### Async Engine
 
-For async operations, use `AsyncEngine`:
+For async operations, use `AsyncEngine`. It can load the same config file into
+the SDK's native `AsyncCogniteClient`:
 
 ```python
 from industrial_model import AsyncEngine
@@ -827,13 +830,11 @@ class CogniteAsset(ViewInstance):
         view_code="ASSET",
     )
     name: str
-    space: str
 
 asset = CogniteAsset(
     external_id="",
-    space="cdf_cdm",
-    name="Pump-001",
     space="Industrial-Data",
+    name="Pump-001",
 )
 
 # Generate ID from name

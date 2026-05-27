@@ -10,14 +10,14 @@ from industrial_model import (
 from industrial_model.statements import Column
 
 
-class TestModel(ViewInstance):
+class SampleModel(ViewInstance):
     name: str
     description: str | None = None
     aliases: list[str] = []
     value: int = 0
 
 
-class TestModelWithConfig(ViewInstance):
+class SampleModelWithConfig(ViewInstance):
     view_config = ViewInstanceConfig(
         view_external_id="TestView",
         instance_spaces=["space1", "space2"],
@@ -27,7 +27,7 @@ class TestModelWithConfig(ViewInstance):
     name: str
 
 
-class TestWritableModel(WritableViewInstance):
+class SampleWritableModel(WritableViewInstance):
     name: str
 
     def edge_id_factory(
@@ -39,14 +39,14 @@ class TestWritableModel(WritableViewInstance):
         )
 
 
-class TestAggregatedModel(AggregatedViewInstance):
+class SampleAggregatedModel(AggregatedViewInstance):
     view_config = ViewInstanceConfig(view_external_id="TestView")
     name: str
 
 
 def test_view_instance_creation() -> None:
     """Test creating a ViewInstance."""
-    instance = TestModel(
+    instance = SampleModel(
         external_id="test-1",
         space="test-space",
         name="Test Name",
@@ -64,15 +64,15 @@ def test_view_instance_creation() -> None:
 def test_view_instance_get_view_external_id() -> None:
     """Test getting view external ID."""
     # Default (uses class name)
-    assert TestModel.get_view_external_id() == "TestModel"
+    assert SampleModel.get_view_external_id() == "SampleModel"
 
     # With config
-    assert TestModelWithConfig.get_view_external_id() == "TestView"
+    assert SampleModelWithConfig.get_view_external_id() == "TestView"
 
 
 def test_view_instance_generate_model_id() -> None:
     """Test generating model IDs."""
-    instance = TestModel(
+    instance = SampleModel(
         external_id="test-1",
         space="test-space",
         name="Test Name",
@@ -88,7 +88,7 @@ def test_view_instance_generate_model_id() -> None:
     assert "test-1" in id2
 
     # With view_code prefix
-    instance_with_code = TestModelWithConfig(
+    instance_with_code = SampleModelWithConfig(
         external_id="test-1",
         space="test-space",
         name="Test Name",
@@ -107,19 +107,19 @@ def test_view_instance_generate_model_id() -> None:
 
 def test_view_instance_generate_model_id_with_column() -> None:
     """Test generating model ID with Column objects."""
-    instance = TestModel(
+    instance = SampleModel(
         external_id="test-1",
         space="test-space",
         name="Test Name",
     )
 
-    id1 = instance.generate_model_id([TestModel.name])
+    id1 = instance.generate_model_id([SampleModel.name])
     assert id1 == "TestName"
 
 
 def test_view_instance_get_field_name() -> None:
     """Test getting field name."""
-    instance = TestModel(
+    instance = SampleModel(
         external_id="test-1",
         space="test-space",
         name="Test Name",
@@ -134,7 +134,7 @@ def test_view_instance_get_field_name() -> None:
 
 def test_view_instance_get_field_alias() -> None:
     """Test getting field alias."""
-    instance = TestModel(
+    instance = SampleModel(
         external_id="test-1",
         space="test-space",
         name="Test Name",
@@ -153,14 +153,14 @@ def test_view_instance_get_field_alias() -> None:
 
 def test_view_instance_get_edge_metadata() -> None:
     """Test getting edge metadata."""
-    instance = TestModel(
+    instance = SampleModel(
         external_id="test-1",
         space="test-space",
         name="Test Name",
     )
 
     # Empty edge metadata (no edges set)
-    edges = instance.get_edge_metadata(TestModel.name)
+    edges = instance.get_edge_metadata(SampleModel.name)
     assert edges == []
 
     # With Column
@@ -174,7 +174,7 @@ def test_view_instance_get_edge_metadata() -> None:
 
 def test_writable_view_instance() -> None:
     """Test WritableViewInstance."""
-    instance = TestWritableModel(
+    instance = SampleWritableModel(
         external_id="test-1",
         space="test-space",
         name="Test Name",
@@ -191,19 +191,19 @@ def test_writable_view_instance() -> None:
 
 def test_aggregated_view_instance() -> None:
     """Test AggregatedViewInstance."""
-    instance = TestAggregatedModel(
+    instance = SampleAggregatedModel(
         name="Test Name",
         value=42.0,
     )
 
     assert instance.name == "Test Name"
     assert instance.value == 42.0
-    assert TestAggregatedModel.get_view_external_id() == "TestView"
+    assert SampleAggregatedModel.get_view_external_id() == "TestView"
 
 
 def test_aggregated_view_instance_get_group_by_fields() -> None:
     """Test getting group by fields."""
-    fields = TestAggregatedModel.get_group_by_fields()
+    fields = SampleAggregatedModel.get_group_by_fields()
     assert "name" in fields
     assert "value" not in fields  # value is the aggregation result
 
@@ -266,7 +266,7 @@ def test_model_with_field_alias() -> None:
 def test_model_validation() -> None:
     """Test model validation."""
     # Valid model
-    instance = TestModel(
+    instance = SampleModel(
         external_id="test-1",
         space="test-space",
         name="Test",
@@ -274,7 +274,7 @@ def test_model_validation() -> None:
     assert instance.name == "Test"
 
     # Optional fields
-    instance = TestModel(
+    instance = SampleModel(
         external_id="test-1",
         space="test-space",
         name="Test",
@@ -285,7 +285,7 @@ def test_model_validation() -> None:
 
 def test_model_default_values() -> None:
     """Test model default values."""
-    instance = TestModel(
+    instance = SampleModel(
         external_id="test-1",
         space="test-space",
         name="Test",

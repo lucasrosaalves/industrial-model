@@ -18,7 +18,7 @@ from industrial_model.statements import (
 )
 
 
-class TestModel(ViewInstance):
+class SampleModel(ViewInstance):
     name: str
     description: str | None = None
     aliases: list[str] = []
@@ -26,16 +26,16 @@ class TestModel(ViewInstance):
 
 def test_select_statement_creation() -> None:
     """Test creating a select statement."""
-    statement = select(TestModel)
+    statement = select(SampleModel)
     assert isinstance(statement, Statement)
-    assert statement.entity == TestModel
+    assert statement.entity == SampleModel
     assert len(statement.get_values().where_clauses) == 0
     assert statement.get_values().limit == 1000  # DEFAULT_LIMIT
 
 
 def test_statement_where() -> None:
     """Test adding where clauses to a statement."""
-    statement = select(TestModel).where(col(TestModel.name) == "test")
+    statement = select(SampleModel).where(col(SampleModel.name) == "test")
 
     values = statement.get_values()
     assert len(values.where_clauses) == 1
@@ -47,9 +47,9 @@ def test_statement_where() -> None:
 def test_statement_multiple_where() -> None:
     """Test adding multiple where clauses."""
     statement = (
-        select(TestModel)
-        .where(col(TestModel.name) == "test")
-        .where(col(TestModel.description).exists_())
+        select(SampleModel)
+        .where(col(SampleModel.name) == "test")
+        .where(col(SampleModel.description).exists_())
     )
 
     values = statement.get_values()
@@ -58,33 +58,33 @@ def test_statement_multiple_where() -> None:
 
 def test_statement_limit() -> None:
     """Test setting limit on a statement."""
-    statement = select(TestModel).limit(50)
+    statement = select(SampleModel).limit(50)
     assert statement.get_values().limit == 50
 
 
 def test_statement_sorting() -> None:
     """Test sorting operations."""
     # Ascending
-    statement = select(TestModel).asc(TestModel.name)
+    statement = select(SampleModel).asc(SampleModel.name)
     values = statement.get_values()
     assert len(values.sort_clauses) == 1
     assert values.sort_clauses[0][1] == "ascending"
     assert values.sort_clauses[0][0].property == "name"
 
     # Descending
-    statement = select(TestModel).desc(TestModel.name)
+    statement = select(SampleModel).desc(SampleModel.name)
     values = statement.get_values()
     assert values.sort_clauses[0][1] == "descending"
 
     # Multiple sorts
-    statement = select(TestModel).asc(TestModel.name).desc(TestModel.description)
+    statement = select(SampleModel).asc(SampleModel.name).desc(SampleModel.description)
     values = statement.get_values()
     assert len(values.sort_clauses) == 2
 
 
 def test_statement_cursor() -> None:
     """Test cursor pagination."""
-    statement = select(TestModel).cursor("cursor123")
+    statement = select(SampleModel).cursor("cursor123")
     assert statement.get_values().cursor == "cursor123"
 
     statement = statement.cursor(None)
@@ -93,8 +93,8 @@ def test_statement_cursor() -> None:
 
 def test_statement_where_edge() -> None:
     """Test edge filtering."""
-    statement = select(TestModel).where_edge(
-        TestModel.name, col(TestModel.name) == "test"
+    statement = select(SampleModel).where_edge(
+        SampleModel.name, col(SampleModel.name) == "test"
     )
 
     values = statement.get_values()
@@ -104,14 +104,14 @@ def test_statement_where_edge() -> None:
 
 
 def test_statement_relation_mode() -> None:
-    statement = select(TestModel).relation_mode(TestModel.name, mode="instanceId")
+    statement = select(SampleModel).relation_mode(SampleModel.name, mode="instanceId")
 
     values = statement.get_values()
     assert values.relation_modes == {"name": "instanceId"}
 
 
 def test_statement_without_relation_mode() -> None:
-    statement = select(TestModel)
+    statement = select(SampleModel)
 
     values = statement.get_values()
     assert values.relation_modes == {}
@@ -119,14 +119,14 @@ def test_statement_without_relation_mode() -> None:
 
 def test_search_statement_creation() -> None:
     """Test creating a search statement."""
-    statement = search(TestModel)
+    statement = search(SampleModel)
     assert isinstance(statement, SearchStatement)
-    assert statement.entity == TestModel
+    assert statement.entity == SampleModel
 
 
 def test_search_statement_query_by() -> None:
     """Test search query_by method."""
-    statement = search(TestModel).query_by("test query")
+    statement = search(SampleModel).query_by("test query")
 
     values = statement.get_values()
     assert values.query == "test query"
@@ -136,9 +136,9 @@ def test_search_statement_query_by() -> None:
 
 def test_search_statement_query_by_with_properties() -> None:
     """Test search with specific properties."""
-    statement = search(TestModel).query_by(
+    statement = search(SampleModel).query_by(
         "test query",
-        query_properties=[TestModel.name, TestModel.description],
+        query_properties=[SampleModel.name, SampleModel.description],
         operation="AND",
     )
 
@@ -150,15 +150,15 @@ def test_search_statement_query_by_with_properties() -> None:
 
 def test_aggregate_statement_creation() -> None:
     """Test creating an aggregation statement."""
-    statement = aggregate(TestModel, "count")
+    statement = aggregate(SampleModel, "count")
     assert isinstance(statement, AggregationStatement)
-    assert statement.entity == TestModel
+    assert statement.entity == SampleModel
     assert statement.aggregate == "count"
 
 
 def test_aggregate_statement_group_by() -> None:
     """Test aggregation with group by."""
-    statement = aggregate(TestModel, "count").group_by(col(TestModel.name))
+    statement = aggregate(SampleModel, "count").group_by(col(SampleModel.name))
 
     values = statement.get_values()
     assert values.group_by_properties is not None
@@ -168,7 +168,7 @@ def test_aggregate_statement_group_by() -> None:
 
 def test_aggregate_statement_aggregate_by() -> None:
     """Test setting aggregation property."""
-    statement = aggregate(TestModel, "sum").aggregate_by(TestModel.name)
+    statement = aggregate(SampleModel, "sum").aggregate_by(SampleModel.name)
 
     values = statement.get_values()
     assert values.aggregation_property.property == "name"
@@ -176,7 +176,7 @@ def test_aggregate_statement_aggregate_by() -> None:
 
 def test_aggregate_statement_where() -> None:
     """Test aggregation with filters."""
-    statement = aggregate(TestModel, "count").where(col(TestModel.name) == "test")
+    statement = aggregate(SampleModel, "count").where(col(SampleModel.name) == "test")
 
     values = statement.get_values()
     assert len(values.where_clauses) == 1
@@ -184,7 +184,7 @@ def test_aggregate_statement_where() -> None:
 
 def test_aggregate_statement_limit() -> None:
     """Test aggregation with limit."""
-    statement = aggregate(TestModel, "count").limit(10)
+    statement = aggregate(SampleModel, "count").limit(10)
     assert statement.get_values().limit == 10
 
 
@@ -194,14 +194,14 @@ def test_column_creation() -> None:
     assert isinstance(col1, Column)
     assert col1.property == "name"
 
-    col2 = col(TestModel.name)
+    col2 = col(SampleModel.name)
     assert isinstance(col2, Column)
     assert col2.property == "name"
 
 
 def test_column_comparison_operators() -> None:
     """Test column comparison operators."""
-    col_name = col(TestModel.name)
+    col_name = col(SampleModel.name)
 
     # Equality
     expr = col_name == "test"
@@ -237,7 +237,7 @@ def test_column_comparison_operators() -> None:
 
 def test_column_list_operators() -> None:
     """Test column list operators."""
-    col_aliases = col(TestModel.aliases)
+    col_aliases = col(SampleModel.aliases)
 
     # In
     expr = col_aliases.in_(["a", "b"])
@@ -258,7 +258,7 @@ def test_column_list_operators() -> None:
 
 def test_column_string_operators() -> None:
     """Test column string operators."""
-    col_name = col(TestModel.name)
+    col_name = col(SampleModel.name)
 
     # Prefix
     expr = col_name.prefix("test")
@@ -269,7 +269,7 @@ def test_column_string_operators() -> None:
 
 def test_column_existence_operators() -> None:
     """Test column existence operators."""
-    col_desc = col(TestModel.description)
+    col_desc = col(SampleModel.description)
 
     # Exists
     expr = col_desc.exists_()
@@ -285,8 +285,8 @@ def test_column_existence_operators() -> None:
 
 def test_column_nested_operator() -> None:
     """Test nested query operator."""
-    col_name = col(TestModel.name)
-    nested_expr = col(TestModel.description) == "test"
+    col_name = col(SampleModel.name)
+    nested_expr = col(SampleModel.description) == "test"
 
     expr = col_name.nested_(nested_expr)
     assert isinstance(expr, LeafExpression)
@@ -296,8 +296,8 @@ def test_column_nested_operator() -> None:
 
 def test_boolean_operators() -> None:
     """Test boolean operators."""
-    expr1 = col(TestModel.name) == "test1"
-    expr2 = col(TestModel.name) == "test2"
+    expr1 = col(SampleModel.name) == "test1"
+    expr2 = col(SampleModel.name) == "test2"
 
     # AND with &
     and_expr = expr1 & expr2
@@ -328,9 +328,9 @@ def test_boolean_operators() -> None:
 
 def test_complex_boolean_expressions() -> None:
     """Test complex boolean expression combinations."""
-    expr1 = col(TestModel.name) == "test1"
-    expr2 = col(TestModel.name) == "test2"
-    expr3 = col(TestModel.description).exists_()
+    expr1 = col(SampleModel.name) == "test1"
+    expr2 = col(SampleModel.name) == "test2"
+    expr3 = col(SampleModel.description).exists_()
 
     # Complex AND/OR
     complex_expr = (expr1 | expr2) & expr3
@@ -347,11 +347,11 @@ def test_complex_boolean_expressions() -> None:
 def test_statement_fluent_chaining() -> None:
     """Test fluent API chaining."""
     statement = (
-        select(TestModel)
-        .where(col(TestModel.name) == "test")
-        .where(col(TestModel.description).exists_())
-        .asc(TestModel.name)
-        .desc(TestModel.description)
+        select(SampleModel)
+        .where(col(SampleModel.name) == "test")
+        .where(col(SampleModel.description).exists_())
+        .asc(SampleModel.name)
+        .desc(SampleModel.description)
         .limit(50)
         .cursor("cursor123")
     )
