@@ -14,7 +14,16 @@ from .models import (
     ViewInstanceConfig,
     WritableViewInstance,
 )
-from .statements import aggregate, and_, col, not_, or_, search, select
+from .statements import (
+    SearchOperationTypes,
+    aggregate,
+    and_,
+    col,
+    not_,
+    or_,
+    search,
+    select,
+)
 
 __all__ = [
     "aggregate",
@@ -37,6 +46,7 @@ __all__ = [
     "PaginatedResult",
     "RootModel",
     "RelationMode",
+    "SearchOperationTypes",
     "ViewInstanceConfig",
     "WritableViewInstance",
 ]

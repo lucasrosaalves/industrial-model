@@ -1,6 +1,6 @@
-from threading import Lock
+import asyncio
 
-from cognite.client import CogniteClient
+from cognite.client import AsyncCogniteClient
 from cognite.client.data_classes.data_modeling import (
     View,
 )
@@ -9,33 +9,33 @@ from industrial_model.config import DataModelId
 
 
 class ViewMapper:
-    def __init__(self, cognite_client: CogniteClient, data_model_id: DataModelId):
+    def __init__(self, cognite_client: AsyncCogniteClient, data_model_id: DataModelId):
         self._cognite_client = cognite_client
         self._data_model_id = data_model_id
         self._views_as_dict: dict[str, View] | None = None
-
-        self._lock = Lock()
+        self._lock = asyncio.Lock()
 
     def get_view(self, view_external_id: str) -> View:
-        views = self._load_views()
-        if view_external_id not in views:
+        if self._views_as_dict is None:
+            raise RuntimeError(
+                "ViewMapper not loaded. Call load_views() before using get_view()."
+            )
+        if view_external_id not in self._views_as_dict:
             raise ValueError(f"View {view_external_id} is not available in data model")
+        return self._views_as_dict[view_external_id]
 
-        return views[view_external_id]
+    async def load_views(self) -> None:
+        if self._views_as_dict is not None:
+            return
 
-    def _load_views(self) -> dict[str, View]:
-        if self._views_as_dict:
-            return self._views_as_dict
+        async with self._lock:
+            if self._views_as_dict is not None:
+                return
 
-        with self._lock:
-            if self._views_as_dict:
-                return self._views_as_dict
-
-            dm = self._cognite_client.data_modeling.data_models.retrieve(
+            dm = await self._cognite_client.data_modeling.data_models.retrieve(
                 ids=self._data_model_id.as_tuple(),
                 inline_views=True,
-            ).latest_version()
-
-            views = {view.external_id: view for view in dm.views}
-            self._views_as_dict = views
-            return views
+            )
+            self._views_as_dict = {
+                view.external_id: view for view in dm.latest_version().views
+            }

@@ -1,6 +1,6 @@
-from threading import Lock
+import asyncio
 
-from cognite.client import CogniteClient
+from cognite.client import AsyncCogniteClient
 
 from industrial_model.models import TViewInstance
 from industrial_model.statements import (
@@ -15,12 +15,12 @@ SPACE_PROPERTY = "space"
 
 
 class QueryOptimizer:
-    def __init__(self, cognite_client: CogniteClient):
+    def __init__(self, cognite_client: AsyncCogniteClient):
         self._all_spaces: list[str] | None = None
         self._cognite_client = cognite_client
-        self._lock = Lock()
+        self._lock = asyncio.Lock()
 
-    def optimize(self, statement: Statement[TViewInstance]) -> None:
+    async def optimize(self, statement: Statement[TViewInstance]) -> None:
         instance_spaces = statement.entity.view_config.get("instance_spaces")
         instance_spaces_prefix = statement.entity.view_config.get(
             "instance_spaces_prefix"
@@ -33,7 +33,9 @@ class QueryOptimizer:
             return
 
         filter_spaces = (
-            self._find_spaces(instance_spaces_prefix) if instance_spaces_prefix else []
+            await self._find_spaces(instance_spaces_prefix)
+            if instance_spaces_prefix
+            else []
         )
         if instance_spaces:
             filter_spaces.extend(instance_spaces)
@@ -55,25 +57,20 @@ class QueryOptimizer:
 
         return False
 
-    def _find_spaces(self, instance_spaces_prefix: str) -> list[str]:
-        all_spaces = self._load_spaces()
-
+    async def _find_spaces(self, instance_spaces_prefix: str) -> list[str]:
+        all_spaces = await self._load_spaces()
         return [
             space for space in all_spaces if space.startswith(instance_spaces_prefix)
         ]
 
-    def _load_spaces(self) -> list[str]:
-        all_spaces = self._all_spaces
-        if all_spaces:
-            return all_spaces
+    async def _load_spaces(self) -> list[str]:
+        if self._all_spaces is not None:
+            return self._all_spaces
 
-        with self._lock:
-            if self._all_spaces:
+        async with self._lock:
+            if self._all_spaces is not None:
                 return self._all_spaces
 
-            all_spaces = self._cognite_client.data_modeling.spaces.list(
-                limit=-1
-            ).as_ids()
-
-            self._all_spaces = all_spaces
-            return all_spaces
+            result = await self._cognite_client.data_modeling.spaces.list(limit=-1)
+            self._all_spaces = result.as_ids()
+            return self._all_spaces

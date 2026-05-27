@@ -14,7 +14,7 @@ from industrial_model.statements import (
 )
 
 
-class TestModel(ViewInstance):
+class SampleModel(ViewInstance):
     name: str
     description: str | None = None
     aliases: list[str] = []
@@ -23,7 +23,7 @@ class TestModel(ViewInstance):
 
 def test_leaf_expression_creation() -> None:
     """Test creating leaf expressions."""
-    expr = col(TestModel.name).equals_("test")
+    expr = col(SampleModel.name).equals_("test")
     assert isinstance(expr, LeafExpression)
     assert expr.property == "name"
     assert expr.operator == "=="
@@ -34,7 +34,7 @@ def test_leaf_expression_operators() -> None:
     """Test all leaf expression operators."""
     from industrial_model.statements import LeafExpression
 
-    col_name = col(TestModel.name)
+    col_name = col(SampleModel.name)
 
     # Comparison operators
     expr = col_name < "z"
@@ -83,8 +83,8 @@ def test_leaf_expression_operators() -> None:
 
 def test_bool_expression_creation() -> None:
     """Test creating boolean expressions."""
-    expr1 = col(TestModel.name) == "test1"
-    expr2 = col(TestModel.name) == "test2"
+    expr1 = col(SampleModel.name) == "test1"
+    expr2 = col(SampleModel.name) == "test2"
 
     # AND
     and_expr = and_(expr1, expr2)
@@ -106,8 +106,8 @@ def test_bool_expression_creation() -> None:
 
 def test_expression_immutability() -> None:
     """Test that expressions are immutable (frozen dataclasses)."""
-    expr1 = col(TestModel.name) == "test1"
-    expr2 = col(TestModel.name) == "test2"
+    expr1 = col(SampleModel.name) == "test1"
+    expr2 = col(SampleModel.name) == "test2"
 
     and_expr = expr1 & expr2
 
@@ -120,9 +120,9 @@ def test_expression_immutability() -> None:
 
 def test_column_hashable() -> None:
     """Test that Column is hashable."""
-    col1 = col(TestModel.name)
-    col2 = col(TestModel.name)
-    col3 = col(TestModel.description)
+    col1 = col(SampleModel.name)
+    col2 = col(SampleModel.name)
+    col3 = col(SampleModel.description)
 
     # Same column should have same hash (based on property)
     assert hash(col1) == hash(col2)
@@ -138,9 +138,9 @@ def test_column_hashable() -> None:
 
 def test_column_equality() -> None:
     """Test Column equality by comparing properties."""
-    col1 = col(TestModel.name)
-    col2 = col(TestModel.name)
-    col3 = col(TestModel.description)
+    col1 = col(SampleModel.name)
+    col2 = col(SampleModel.name)
+    col3 = col(SampleModel.description)
 
     # Can't use == directly (raises ValueError), so compare properties
     assert col1.property == col2.property
@@ -149,8 +149,8 @@ def test_column_equality() -> None:
 
 def test_nested_expressions() -> None:
     """Test nested expression building."""
-    inner_expr = col(TestModel.description) == "test"
-    outer_expr = col(TestModel.name).nested_(inner_expr)
+    inner_expr = col(SampleModel.description) == "test"
+    outer_expr = col(SampleModel.name).nested_(inner_expr)
 
     assert isinstance(outer_expr, LeafExpression)
     assert outer_expr.operator == "nested"
@@ -160,9 +160,9 @@ def test_nested_expressions() -> None:
 
 def test_complex_nested_expressions() -> None:
     """Test deeply nested boolean expressions."""
-    expr1 = col(TestModel.name) == "test1"
-    expr2 = col(TestModel.name) == "test2"
-    expr3 = col(TestModel.description).exists_()
+    expr1 = col(SampleModel.name) == "test1"
+    expr2 = col(SampleModel.name) == "test2"
+    expr3 = col(SampleModel.description).exists_()
 
     # Nested AND/OR
     nested = and_(or_(expr1, expr2), expr3)
@@ -177,7 +177,7 @@ def test_complex_nested_expressions() -> None:
 def test_datetime_comparison() -> None:
     """Test datetime comparisons."""
     dt = datetime(2024, 1, 1)
-    col_name = col(TestModel.name)
+    col_name = col(SampleModel.name)
 
     expr = col_name.gt_(dt)
     assert isinstance(expr, LeafExpression)
@@ -188,7 +188,7 @@ def test_datetime_comparison() -> None:
 def test_instance_id_comparison() -> None:
     """Test InstanceId comparisons."""
     instance_id = InstanceId(external_id="test", space="space")
-    col_name = col(TestModel.name)
+    col_name = col(SampleModel.name)
 
     expr = col_name == instance_id
     assert isinstance(expr, LeafExpression)
@@ -199,7 +199,7 @@ def test_list_value_types() -> None:
     """Test different list value types."""
     from industrial_model.statements import LeafExpression
 
-    col_name = col(TestModel.name)
+    col_name = col(SampleModel.name)
 
     # String list
     expr = col_name.in_(["a", "b", "c"])
@@ -207,7 +207,7 @@ def test_list_value_types() -> None:
     assert expr.value == ["a", "b", "c"]
 
     # Int list
-    col_value = col(TestModel.value)
+    col_value = col(SampleModel.value)
     expr = col_value.in_([1, 2, 3])
     assert isinstance(expr, LeafExpression)
     assert expr.value == [1, 2, 3]
@@ -225,7 +225,7 @@ def test_list_value_types() -> None:
 
 def test_not_operator() -> None:
     """Test not operator variations."""
-    col_name = col(TestModel.name)
+    col_name = col(SampleModel.name)
 
     # not_exists
     expr = col_name.not_exists_()
@@ -243,7 +243,7 @@ def test_not_operator() -> None:
 
 def test_operator_chaining() -> None:
     """Test chaining operators."""
-    col_name = col(TestModel.name)
+    col_name = col(SampleModel.name)
 
     # Chain comparisons
     expr1 = col_name == "test"

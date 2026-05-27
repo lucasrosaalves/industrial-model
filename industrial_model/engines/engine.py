@@ -1,5 +1,7 @@
+import asyncio
+from collections.abc import Coroutine
 from pathlib import Path
-from typing import Any
+from typing import Any, TypeVar
 
 from cognite.client import CogniteClient
 
@@ -18,9 +20,10 @@ from industrial_model.statements import (
     SearchStatement,
     Statement,
 )
-from industrial_model.utils import run_async
 
 from ._internal import generate_engine_params
+
+_T = TypeVar("_T")
 
 
 class Engine:
@@ -29,84 +32,45 @@ class Engine:
         cognite_client: CogniteClient,
         data_model_id: DataModelId,
     ):
-        self._cognite_adapter = CogniteAdapter(cognite_client, data_model_id)
-
-    def search(
-        self,
-        statement: SearchStatement[TViewInstance],
-        validation_mode: ValidationMode = "raiseOnError",
-    ) -> list[TViewInstance]:
-        data = self._cognite_adapter.search(statement)
-        return self._validate_data(statement.entity, data, validation_mode)
+        self._cognite_adapter = CogniteAdapter(
+            cognite_client.get_async_client(), data_model_id
+        )
 
     async def search_async(
         self,
         statement: SearchStatement[TViewInstance],
         validation_mode: ValidationMode = "raiseOnError",
     ) -> list[TViewInstance]:
-        return await run_async(self.search, statement, validation_mode)
-
-    def query(
-        self,
-        statement: Statement[TViewInstance],
-        validation_mode: ValidationMode = "raiseOnError",
-    ) -> PaginatedResult[TViewInstance]:
-        data, next_cursor = self._cognite_adapter.query(statement, False)
-
-        return PaginatedResult(
-            data=self._validate_data(statement.entity, data, validation_mode),
-            next_cursor=next_cursor,
-            has_next_page=next_cursor is not None,
-        )
+        data = await self._cognite_adapter.search(statement)
+        return self._validate_data(statement.entity, data, validation_mode)
 
     async def query_async(
         self,
         statement: Statement[TViewInstance],
         validation_mode: ValidationMode = "raiseOnError",
     ) -> PaginatedResult[TViewInstance]:
-        return await run_async(self.query, statement, validation_mode)
-
-    def query_all_pages(
-        self,
-        statement: Statement[TViewInstance],
-        validation_mode: ValidationMode = "raiseOnError",
-    ) -> list[TViewInstance]:
-        if statement.get_values().cursor:
-            raise ValueError("Cursor should be none when querying all pages")
-
-        data, _ = self._cognite_adapter.query(statement, True)
-
-        return self._validate_data(statement.entity, data, validation_mode)
+        data, next_cursor = await self._cognite_adapter.query(statement, False)
+        return PaginatedResult(
+            data=self._validate_data(statement.entity, data, validation_mode),
+            next_cursor=next_cursor,
+            has_next_page=next_cursor is not None,
+        )
 
     async def query_all_pages_async(
         self,
         statement: Statement[TViewInstance],
         validation_mode: ValidationMode = "raiseOnError",
     ) -> list[TViewInstance]:
-        return await run_async(self.query_all_pages, statement, validation_mode)
-
-    def aggregate(
-        self, statement: AggregationStatement[TAggregatedViewInstance]
-    ) -> list[TAggregatedViewInstance]:
-        data = self._cognite_adapter.aggregate(statement)
-
-        return [statement.entity.model_validate(item) for item in data]
+        if statement.get_values().cursor:
+            raise ValueError("Cursor should be none when querying all pages")
+        data, _ = await self._cognite_adapter.query(statement, True)
+        return self._validate_data(statement.entity, data, validation_mode)
 
     async def aggregate_async(
         self, statement: AggregationStatement[TAggregatedViewInstance]
     ) -> list[TAggregatedViewInstance]:
-        return await run_async(self.aggregate, statement)
-
-    def upsert(
-        self,
-        entries: list[TWritableViewInstance],
-        replace: bool = False,
-        remove_unset: bool = False,
-    ) -> None:
-        if not entries:
-            return
-
-        return self._cognite_adapter.upsert(entries, replace, remove_unset)
+        data = await self._cognite_adapter.aggregate(statement)
+        return [statement.entity.model_validate(item) for item in data]
 
     async def upsert_async(
         self,
@@ -114,15 +78,64 @@ class Engine:
         replace: bool = False,
         remove_unset: bool = False,
     ) -> None:
-        return await run_async(self.upsert, entries, replace, remove_unset)
-
-    def delete(self, nodes: list[TViewInstance]) -> None:
-        self._cognite_adapter.delete(
-            nodes,
-        )
+        if not entries:
+            return
+        await self._cognite_adapter.upsert(entries, replace, remove_unset)
 
     async def delete_async(self, nodes: list[TViewInstance]) -> None:
-        return await run_async(self.delete, nodes)
+        await self._cognite_adapter.delete(nodes)
+
+    # ---------------------------------------------------------------- sync (wrap async)
+
+    @staticmethod
+    def _run_sync(coro: Coroutine[Any, Any, _T]) -> _T:
+        try:
+            asyncio.get_running_loop()
+            raise RuntimeError(
+                "Engine sync methods cannot be called from an async context. "
+                "Use the async variants instead (e.g. query_async, search_async)."
+            )
+        except RuntimeError as exc:
+            if "async context" in str(exc):
+                raise
+        return asyncio.run(coro)
+
+    def search(
+        self,
+        statement: SearchStatement[TViewInstance],
+        validation_mode: ValidationMode = "raiseOnError",
+    ) -> list[TViewInstance]:
+        return self._run_sync(self.search_async(statement, validation_mode))
+
+    def query(
+        self,
+        statement: Statement[TViewInstance],
+        validation_mode: ValidationMode = "raiseOnError",
+    ) -> PaginatedResult[TViewInstance]:
+        return self._run_sync(self.query_async(statement, validation_mode))
+
+    def query_all_pages(
+        self,
+        statement: Statement[TViewInstance],
+        validation_mode: ValidationMode = "raiseOnError",
+    ) -> list[TViewInstance]:
+        return self._run_sync(self.query_all_pages_async(statement, validation_mode))
+
+    def aggregate(
+        self, statement: AggregationStatement[TAggregatedViewInstance]
+    ) -> list[TAggregatedViewInstance]:
+        return self._run_sync(self.aggregate_async(statement))
+
+    def upsert(
+        self,
+        entries: list[TWritableViewInstance],
+        replace: bool = False,
+        remove_unset: bool = False,
+    ) -> None:
+        self._run_sync(self.upsert_async(entries, replace, remove_unset))
+
+    def delete(self, nodes: list[TViewInstance]) -> None:
+        self._run_sync(self.delete_async(nodes))
 
     @classmethod
     def from_config_file(cls, config_file: str | Path) -> "Engine":

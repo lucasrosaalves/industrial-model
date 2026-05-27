@@ -1,7 +1,7 @@
 import logging
 from typing import Any
 
-from cognite.client import CogniteClient
+from cognite.client import AsyncCogniteClient
 from cognite.client.data_classes.data_modeling import Edge, Node
 from cognite.client.data_classes.data_modeling.query import (
     Query as CogniteQuery,
@@ -39,10 +39,11 @@ from .view_mapper import ViewMapper
 
 
 class CogniteAdapter:
-    def __init__(self, cognite_client: CogniteClient, data_model_id: DataModelId):
+    def __init__(self, cognite_client: AsyncCogniteClient, data_model_id: DataModelId):
         self._cognite_client = cognite_client
 
         view_mapper = ViewMapper(cognite_client, data_model_id)
+        self._view_mapper = view_mapper
         self._optmizer = QueryOptimizer(cognite_client)
         self._query_mapper = QueryMapper(view_mapper)
         self._result_mapper = QueryResultMapper(view_mapper)
@@ -50,9 +51,12 @@ class CogniteAdapter:
         self._aggregation_mapper = AggregationMapper(view_mapper)
         self._search_mapper = SearchMapper(view_mapper)
 
-    def search(self, statement: SearchStatement[TViewInstance]) -> list[dict[str, Any]]:
+    async def search(
+        self, statement: SearchStatement[TViewInstance]
+    ) -> list[dict[str, Any]]:
+        await self._view_mapper.load_views()
         search_query = self._search_mapper.map(statement)
-        data = self._cognite_client.data_modeling.instances.search(
+        data = await self._cognite_client.data_modeling.instances.search(
             view=search_query.view.as_id(),
             query=search_query.query,
             filter=search_query.filter,
@@ -64,20 +68,21 @@ class CogniteAdapter:
 
         return self._result_mapper.nodes_to_dict(data)
 
-    def query(
+    async def query(
         self, statement: Statement[TViewInstance], all_pages: bool
     ) -> tuple[list[dict[str, Any]], str | None]:
-        self._optmizer.optimize(statement)
+        await self._view_mapper.load_views()
+        await self._optmizer.optimize(statement)
         cognite_query = self._query_mapper.map(statement)
         view_external_id = statement.entity.get_view_external_id()
 
         data: list[dict[str, Any]] = []
         while True:
-            query_result = self._cognite_client.data_modeling.instances.query(
+            query_result = await self._cognite_client.data_modeling.instances.query(
                 cognite_query
             )
 
-            dependencies_data = self._query_dependencies_pages(
+            dependencies_data = await self._query_dependencies_pages(
                 cognite_query, query_result, view_external_id
             )
 
@@ -102,12 +107,13 @@ class CogniteAdapter:
             if not all_pages or last_page:
                 return data, next_cursor_
 
-    def aggregate(
+    async def aggregate(
         self, statement: AggregationStatement[TAggregatedViewInstance]
     ) -> list[dict[str, Any]]:
+        await self._view_mapper.load_views()
         query = self._aggregation_mapper.map(statement)
 
-        result = self._cognite_client.data_modeling.instances.aggregate(
+        result = await self._cognite_client.data_modeling.instances.aggregate(
             view=query.view.as_id(),
             aggregates=query.metric_aggregation,
             filter=query.filters,
@@ -124,12 +130,13 @@ class CogniteAdapter:
             data.append(entry)
         return data
 
-    def upsert(
+    async def upsert(
         self,
         entries: list[TWritableViewInstance],
         replace: bool = False,
         remove_unset: bool = False,
     ) -> None:
+        await self._view_mapper.load_views()
         logger = logging.getLogger(__name__)
         operation = self._upsert_mapper.map(entries, remove_unset)
 
@@ -138,7 +145,7 @@ class CogniteAdapter:
                 f"Upserting {len(node_chunk)} nodes (replace={replace}, "
                 "remove_unset={remove_unset})"
             )
-            self._cognite_client.data_modeling.instances.apply(
+            await self._cognite_client.data_modeling.instances.apply(
                 nodes=node_chunk,
                 replace=replace,
             )
@@ -148,23 +155,23 @@ class CogniteAdapter:
                 f"Upserting {len(edge_chunk)} edges (replace={replace},"
                 "remove_unset={remove_unset})"
             )
-            self._cognite_client.data_modeling.instances.apply(
+            await self._cognite_client.data_modeling.instances.apply(
                 edges=edge_chunk,
                 replace=replace,
             )
 
         for edges_to_remove_chunk in operation.chunk_edges_to_delete():
             logger.debug(f"Deleting {len(edges_to_remove_chunk)} edges")
-            self._cognite_client.data_modeling.instances.delete(
+            await self._cognite_client.data_modeling.instances.delete(
                 edges=[item.as_tuple() for item in edges_to_remove_chunk],
             )
 
-    def delete(self, nodes: list[TViewInstance]) -> None:
-        self._cognite_client.data_modeling.instances.delete(
+    async def delete(self, nodes: list[TViewInstance]) -> None:
+        await self._cognite_client.data_modeling.instances.delete(
             nodes=[item.as_tuple() for item in nodes],
         )
 
-    def _query_dependencies_pages(
+    async def _query_dependencies_pages(
         self,
         cognite_query: CogniteQuery,
         query_result: CogniteQueryResult,
@@ -176,11 +183,13 @@ class CogniteAdapter:
         if not new_query:
             return None
 
-        new_query_result = self._cognite_client.data_modeling.instances.query(new_query)
+        new_query_result = await self._cognite_client.data_modeling.instances.query(
+            new_query
+        )
 
         result = map_nodes_and_edges(new_query_result, new_query)
 
-        nested_results = self._query_dependencies_pages(
+        nested_results = await self._query_dependencies_pages(
             new_query, new_query_result, view_external_id
         )
         return append_nodes_and_edges(result, nested_results)
