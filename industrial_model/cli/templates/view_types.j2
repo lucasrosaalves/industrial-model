@@ -1,0 +1,8 @@
+from __future__ import annotations
+
+from typing import Literal, TypeAlias
+
+{{ view_definition.query_property_type_name }}: TypeAlias = {{ view_definition.query_property_literal }}
+{{ view_definition.group_by_property_type_name }}: TypeAlias = {{ view_definition.group_by_property_literal }}
+{{ view_definition.aggregation_property_type_name }}: TypeAlias = {{ view_definition.aggregate_property_literal }}
+{{ view_definition.include_property_type_name }}: TypeAlias = {{ view_definition.include_property_literal }}

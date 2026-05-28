@@ -92,6 +92,7 @@ def _get_schema_type_properties(
     schema: dict[str, Any],
     parent_ref: str | None = None,
     visited_count: defaultdict[str, int] | None = None,
+    ref_path: tuple[str, ...] = (),
 ) -> dict[str, Any] | None:
     current_ref = schema.get("title")
     if "$ref" in schema:
@@ -104,8 +105,12 @@ def _get_schema_type_properties(
         if visited_count is not None:
             if visited_count[current_ref] > 1:
                 return None
+            if current_ref in ref_path and parent_ref != current_ref:
+                return _get_schema_shallow_properties(schema)
             if parent_ref == current_ref:
                 visited_count[current_ref] += 1
+        if parent_ref is not None:
+            ref_path = (*ref_path, current_ref)
 
     return {
         key: _get_schema_field_properties(
@@ -113,9 +118,14 @@ def _get_schema_type_properties(
             field_schema,
             current_ref,
             visited_count or defaultdict(lambda: 0),
+            ref_path,
         )
         for key, field_schema in schema.get("properties", {}).items()
     }
+
+
+def _get_schema_shallow_properties(schema: dict[str, Any]) -> dict[str, Any]:
+    return dict.fromkeys(schema.get("properties", {}))
 
 
 def _get_schema_field_properties(
@@ -123,23 +133,24 @@ def _get_schema_field_properties(
     schema: dict[str, Any],
     parent_ref: str | None,
     visited_count: defaultdict[str, int],
+    ref_path: tuple[str, ...],
 ) -> dict[str, Any] | None:
     if "$ref" in schema:
         return _get_schema_type_properties(
-            root_schema, schema, parent_ref, visited_count
+            root_schema, schema, parent_ref, visited_count, ref_path
         )
 
     items = schema.get("items")
     if isinstance(items, dict):
         return _get_schema_field_properties(
-            root_schema, items, parent_ref, visited_count
+            root_schema, items, parent_ref, visited_count, ref_path
         )
 
     properties: dict[str, Any] = {}
     for union_key in ("anyOf", "oneOf", "allOf"):
         for option_schema in schema.get(union_key, []):
             option_properties = _get_schema_field_properties(
-                root_schema, option_schema, parent_ref, visited_count
+                root_schema, option_schema, parent_ref, visited_count, ref_path
             )
             _merge_relation_properties(properties, option_properties)
 

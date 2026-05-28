@@ -1,0 +1,33 @@
+from __future__ import annotations
+
+import datetime
+from typing import Any
+
+from pydantic import Field
+
+from industrial_model import AggregatedViewInstance, InstanceId, WritableViewInstance
+
+{% for view_definition in view_definitions %}
+
+class {{ view_definition.view_name }}(WritableViewInstance):
+    {{ view_definition.view_config }}
+{% if view_definition.entity_fields %}
+{% for field in view_definition.entity_fields %}
+    {{ field }}
+{% endfor %}
+{% else %}
+    pass
+{% endif %}
+
+    def edge_id_factory(
+        self, target_node: InstanceId, edge_type: InstanceId
+    ) -> InstanceId:
+        return InstanceId(
+            external_id=(
+                f"{self.external_id}-{target_node.external_id}-"
+                f"{edge_type.external_id}"
+            ),
+            space=self.space,
+        )
+
+{% endfor %}

@@ -61,6 +61,7 @@ class ViewInstanceConfig(TypedDict, total=False):
     instance_spaces: list[str] | None
     instance_spaces_prefix: str | None
     view_code: str | None
+    group_by_behavior: Literal["ALL", "NONE"]
 
 
 class ViewInstance(InstanceId):

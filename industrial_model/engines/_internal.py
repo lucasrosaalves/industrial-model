@@ -1,11 +1,15 @@
 import os
+from collections.abc import Callable
 from pathlib import Path
 from string import Template
 
 import yaml
-from cognite.client import CogniteClient
+from cognite.client import ClientConfig, CogniteClient
+from cognite.client.credentials import Token
 
 from industrial_model.config import DataModelId
+
+UserToken = str | Callable[[], str]
 
 
 def generate_engine_params(
@@ -31,3 +35,22 @@ def generate_engine_params(
     client = CogniteClient.load(engine_config["cognite"])
     dm_id = DataModelId.model_validate(engine_config["data_model"])
     return client, dm_id
+
+
+def generate_engine_params_from_user_token(
+    *,
+    user_token: UserToken,
+    project: str,
+    data_model_id: DataModelId | dict[str, str],
+    client_name: str = "industrial-model",
+    base_url: str | None = None,
+    cluster: str | None = None,
+) -> tuple[CogniteClient, DataModelId]:
+    client_config = ClientConfig(
+        client_name=client_name,
+        project=project,
+        credentials=Token(user_token),
+        base_url=base_url,
+        cluster=cluster,
+    )
+    return CogniteClient(client_config), DataModelId.model_validate(data_model_id)

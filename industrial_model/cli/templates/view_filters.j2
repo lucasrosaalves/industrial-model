@@ -1,0 +1,30 @@
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, TypedDict
+
+from industrial_model.queries.filter_types import (
+{% for ft in view_definition.used_filter_types %}
+    {{ ft }},
+{% endfor %}
+)
+
+{% if view_definition.filter_relation_type_imports %}
+if TYPE_CHECKING:
+{% for relation_import in view_definition.filter_relation_type_imports %}
+    from ..{{ relation_import[0] }}.filters import {{ relation_import[2] }}
+{% endfor %}
+
+{% endif %}
+
+{{ view_definition.view_name }}Filter = TypedDict(
+    "{{ view_definition.view_name }}Filter",
+    {
+{% for field in view_definition.typeddict_fields %}
+{{ field }}
+{% endfor %}
+        "OR": "list[{{ view_definition.view_name }}Filter]",
+        "AND": "list[{{ view_definition.view_name }}Filter]",
+        "NOT": "{{ view_definition.view_name }}Filter",
+    },
+    total=False,
+)
