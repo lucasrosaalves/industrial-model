@@ -344,7 +344,7 @@ def _prompt_data_model(token: str, project: str, base_url: str) -> Any:
         for i, dm in enumerate(data_models)
     ]
 
-    index = inquirer.fuzzy(
+    index = inquirer.fuzzy(  # type: ignore[attr-defined]
         message="Select data model:",
         choices=choices,
         max_height="50%",

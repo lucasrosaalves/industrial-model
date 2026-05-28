@@ -66,7 +66,6 @@ def _pkce_challenge(verifier: str) -> str:
     return _base64_url(hashlib.sha256(verifier.encode("ascii")).digest())
 
 
-
 def _fetch_json(url: str, data: bytes | None = None) -> dict[str, Any]:
     headers = {"Content-Type": "application/x-www-form-urlencoded"} if data else {}
     request = urllib.request.Request(
@@ -435,9 +434,7 @@ def browser_login(
     return value
 
 
-def save_session(
-    session: Session, config: LoginConfig = DEFAULT_LOGIN_CONFIG
-) -> None:
+def save_session(session: Session, config: LoginConfig = DEFAULT_LOGIN_CONFIG) -> None:
     path = config.cert_dir / "session.json"
     payload = {
         "project": session.project,
