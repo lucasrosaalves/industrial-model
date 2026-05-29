@@ -92,9 +92,7 @@ def test_generate_from_views_writes_compileable_package(
     assert "DATA_MODEL_ID = DataModelId(" in facade_content
     assert 'DEFAULT_CLUSTER: str | None = "westeurope-1"' in facade_content
     assert "base_url" not in facade_content
-    assert "def __init__(self, engine: CogniteClient) -> None: ..." in (
-        facade_content
-    )
+    assert "def __init__(self, engine: CogniteClient) -> None: ..." in (facade_content)
     assert "user_token: UserToken" in facade_content
     assert "self.cognite_asset = CogniteAssetClient(engine)" in facade_content
     assert "self.cognite_equipment = CogniteEquipmentClient(engine)" in facade_content
@@ -216,9 +214,7 @@ def test_generate_from_views_writes_compileable_package(
         user_token="test-token",
         project="test-project",
     )
-    generated_cognite_client = (
-        client_from_token.engine._cognite_adapter._cognite_client
-    )
+    generated_cognite_client = client_from_token.engine._cognite_adapter._cognite_client
     assert generated_cognite_client.config.base_url == (
         "https://westeurope-1.cognitedata.com"
     )
