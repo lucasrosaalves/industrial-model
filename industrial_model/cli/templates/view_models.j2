@@ -1,0 +1,24 @@
+from __future__ import annotations
+
+import datetime
+from typing import Any
+
+from pydantic import Field
+
+from industrial_model import AggregatedViewInstance, InstanceId
+
+from ..models import {{ view_definition.view_name }}
+
+
+class {{ view_definition.view_name }}Aggregation(AggregatedViewInstance):
+    {{ view_definition.aggregation_view_config }}
+{% if view_definition.aggregate_fields %}
+{% for field in view_definition.aggregate_fields %}
+    {{ field }}
+{% endfor %}
+{% else %}
+    pass
+{% endif %}
+
+
+__all__ = ["{{ view_definition.view_name }}", "{{ view_definition.view_name }}Aggregation"]

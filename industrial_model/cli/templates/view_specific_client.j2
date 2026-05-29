@@ -1,0 +1,96 @@
+from industrial_model import Engine, PaginatedResult
+from industrial_model.queries import build_query_statement
+from industrial_model.view_client import ViewClient
+
+from .filters import {{ view_definition.view_name }}Filter
+from .models import {{ view_definition.view_name }}, {{ view_definition.view_name }}Aggregation
+from .types import (
+    {{ view_definition.aggregation_property_type_name }},
+    {{ view_definition.group_by_property_type_name }},
+    {{ view_definition.include_property_type_name }},
+    {{ view_definition.query_property_type_name }},
+)
+
+_RELATION_PROPERTIES: frozenset[str] = {{ view_definition.relation_property_set }}
+
+
+class {{ view_definition.view_name }}Client(
+    ViewClient[
+        {{ view_definition.view_name }},
+        {{ view_definition.view_name }}Aggregation,
+        {{ view_definition.view_name }}Filter,
+        {{ view_definition.query_property_type_name }},
+        {{ view_definition.group_by_property_type_name }},
+        {{ view_definition.aggregation_property_type_name }},
+    ]
+):
+    def __init__(self, engine: Engine) -> None:
+        super().__init__(engine, {{ view_definition.view_name }}, {{ view_definition.view_name }}Aggregation)
+
+    def query(
+        self,
+        filters: {{ view_definition.view_name }}Filter | None = None,
+        *,
+        include: list[{{ view_definition.include_property_type_name }}] | None = None,
+        limit: int = 1000,
+        cursor: str | None = None,
+    ) -> PaginatedResult[{{ view_definition.view_name }}]:
+        return self._engine.query(
+            build_query_statement(
+                self._entity_cls,
+                filters,
+                exclude_relations=[p for p in _RELATION_PROPERTIES if p not in (include or ())],
+                limit=limit,
+                cursor=cursor,
+            )
+        )
+
+    async def query_async(
+        self,
+        filters: {{ view_definition.view_name }}Filter | None = None,
+        *,
+        include: list[{{ view_definition.include_property_type_name }}] | None = None,
+        limit: int = 1000,
+        cursor: str | None = None,
+    ) -> PaginatedResult[{{ view_definition.view_name }}]:
+        return await self._engine.query_async(
+            build_query_statement(
+                self._entity_cls,
+                filters,
+                exclude_relations=[p for p in _RELATION_PROPERTIES if p not in (include or ())],
+                limit=limit,
+                cursor=cursor,
+            )
+        )
+
+    def query_all_pages(
+        self,
+        filters: {{ view_definition.view_name }}Filter | None = None,
+        *,
+        include: list[{{ view_definition.include_property_type_name }}] | None = None,
+        limit: int = 1000,
+    ) -> list[{{ view_definition.view_name }}]:
+        return self._engine.query_all_pages(
+            build_query_statement(
+                self._entity_cls,
+                filters,
+                exclude_relations=[p for p in _RELATION_PROPERTIES if p not in (include or ())],
+                limit=limit,
+            )
+        )
+
+    async def query_all_pages_async(
+        self,
+        filters: {{ view_definition.view_name }}Filter | None = None,
+        *,
+        include: list[{{ view_definition.include_property_type_name }}] | None = None,
+        limit: int = 1000,
+    ) -> list[{{ view_definition.view_name }}]:
+        return await self._engine.query_all_pages_async(
+            build_query_statement(
+                self._entity_cls,
+                filters,
+                exclude_relations=[p for p in _RELATION_PROPERTIES if p not in (include or ())],
+                limit=limit,
+            )
+        )

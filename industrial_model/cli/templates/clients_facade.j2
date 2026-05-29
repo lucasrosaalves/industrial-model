@@ -1,0 +1,13 @@
+from industrial_model import Engine
+
+{% for view_definition in view_definitions %}
+from .{{ view_definition.view_module_name }} import {{ view_definition.view_name }}Client
+{% endfor %}
+
+
+class {{ client_name }}:
+    def __init__(self, engine: Engine):
+        self.engine = engine
+{% for view_definition in view_definitions %}
+        self.{{ view_definition.view_module_name }} = {{ view_definition.view_name }}Client(engine)
+{% endfor %}

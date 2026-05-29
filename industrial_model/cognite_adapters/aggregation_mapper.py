@@ -67,11 +67,15 @@ class AggregationMapper:
         if metric_aggregation is None:
             raise ValueError(f"Unsupported aggregate function: {statement.aggregate}")
 
-        group_by_columns = (
-            [prop.property for prop in statement_values.group_by_properties]
-            if statement_values.group_by_properties is not None
-            else statement.entity.get_group_by_fields()
-        )
+        if statement_values.group_by_properties is not None:
+            group_by_columns = [
+                prop.property for prop in statement_values.group_by_properties
+            ]
+        elif statement.entity.view_config.get("group_by_behavior", "ALL") == "NONE":
+            group_by_columns = []
+        else:
+            group_by_columns = statement.entity.get_group_by_fields()
+
         return AggregationQuery(
             view=root_view,
             metric_aggregation=metric_aggregation,

@@ -21,7 +21,11 @@ from industrial_model.statements import (
     Statement,
 )
 
-from ._internal import generate_engine_params
+from ._internal import (
+    UserToken,
+    generate_engine_params,
+    generate_engine_params_from_user_token,
+)
 
 _T = TypeVar("_T")
 
@@ -138,7 +142,28 @@ class Engine:
     @classmethod
     def from_config_file(cls, config_file: str | Path) -> "Engine":
         client, dm_id = generate_engine_params(config_file)
-        return Engine(client, dm_id)
+        return cls(client, dm_id)
+
+    @classmethod
+    def from_user_token(
+        cls,
+        *,
+        user_token: UserToken,
+        project: str,
+        data_model_id: DataModelId | dict[str, str],
+        client_name: str = "industrial-model",
+        base_url: str | None = None,
+        cluster: str | None = None,
+    ) -> "Engine":
+        client, dm_id = generate_engine_params_from_user_token(
+            user_token=user_token,
+            project=project,
+            data_model_id=data_model_id,
+            client_name=client_name,
+            base_url=base_url,
+            cluster=cluster,
+        )
+        return cls(client, dm_id)
 
     def _validate_data(
         self,

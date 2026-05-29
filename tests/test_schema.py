@@ -31,7 +31,10 @@ class TimeSeries(CogniteDescribable):
 
 class CogniteAsset(CogniteDescribable):
     parent: "CogniteAsset | None"
-    timeseries: InstanceId | TimeSeries
+
+    timeseries: InstanceId | TimeSeries | None
+
+    my_list: list[InstanceId | TimeSeries] | None = None
 
 
 class ParentType(ViewInstance):
@@ -58,6 +61,14 @@ class NestedSharedRelation(ViewInstance):
 
 class AssetWithOverlappingUnion(ViewInstance):
     relation: NestedSharedRelation | ScalarSharedRelation | None = None
+
+
+class MutualA(ViewInstance):
+    b: "MutualB | None" = None
+
+
+class MutualB(ViewInstance):
+    a: MutualA | None = None
 
 
 def test_get_schema_properties() -> None:
@@ -138,6 +149,41 @@ def test_schema_properties_preserve_nested_paths_in_overlapping_unions() -> None
     assert "relation|shared|code" in schema
 
 
+def test_schema_properties_stop_mutual_reference_cycles() -> None:
+    schema = get_schema_properties(MutualA, SEP)
+
+    assert "b|a|b|a" in schema
+    assert "b|a|b|a|b" not in schema
+
+
+def test_schema_properties_for_asset_timeseries_merges_instance_id_and_model() -> None:
+    schema = get_schema_properties(CogniteAsset, SEP)
+
+    # InstanceId properties surfaced via the union
+    assert "timeseries|externalId" in schema
+    assert "timeseries|space" in schema
+    # TimeSeries model properties surfaced via the union
+    assert "timeseries|name" in schema
+    assert "timeseries|description" in schema
+
+
+def test_schema_properties_for_asset_list_union_expands_element_type() -> None:
+    schema = get_schema_properties(CogniteAsset, SEP)
+
+    assert "myList" in schema
+    assert "myList|externalId" in schema
+    assert "myList|name" in schema
+
+
+def test_schema_properties_for_asset_self_reference_stops_at_shallow_props() -> None:
+    schema = get_schema_properties(CogniteAsset, SEP)
+
+    assert "parent|parent|parent" in schema
+    # Cycle detected — third-level parent expands only shallow (no further nesting)
+    assert "parent|parent|parent|parent" not in schema
+    assert "parent|parent|parent|name" not in schema
+
+
 def _get_test_schema() -> dict[type[BaseModel], list[str]]:
     return {
         CogniteDescribable: [
@@ -147,6 +193,71 @@ def _get_test_schema() -> dict[type[BaseModel], list[str]]:
             "name",
             "space",
             "tags",
+        ],
+        CogniteAsset: [
+            "aliases",
+            "description",
+            "externalId",
+            "myList",
+            "myList|aliases",
+            "myList|description",
+            "myList|externalId",
+            "myList|name",
+            "myList|space",
+            "myList|tags",
+            "name",
+            "parent",
+            "parent|aliases",
+            "parent|description",
+            "parent|externalId",
+            "parent|myList",
+            "parent|myList|aliases",
+            "parent|myList|description",
+            "parent|myList|externalId",
+            "parent|myList|name",
+            "parent|myList|space",
+            "parent|myList|tags",
+            "parent|name",
+            "parent|parent",
+            "parent|parent|aliases",
+            "parent|parent|description",
+            "parent|parent|externalId",
+            "parent|parent|myList",
+            "parent|parent|myList|aliases",
+            "parent|parent|myList|description",
+            "parent|parent|myList|externalId",
+            "parent|parent|myList|name",
+            "parent|parent|myList|space",
+            "parent|parent|myList|tags",
+            "parent|parent|name",
+            "parent|parent|parent",
+            "parent|parent|space",
+            "parent|parent|tags",
+            "parent|parent|timeseries",
+            "parent|parent|timeseries|aliases",
+            "parent|parent|timeseries|description",
+            "parent|parent|timeseries|externalId",
+            "parent|parent|timeseries|name",
+            "parent|parent|timeseries|space",
+            "parent|parent|timeseries|tags",
+            "parent|space",
+            "parent|tags",
+            "parent|timeseries",
+            "parent|timeseries|aliases",
+            "parent|timeseries|description",
+            "parent|timeseries|externalId",
+            "parent|timeseries|name",
+            "parent|timeseries|space",
+            "parent|timeseries|tags",
+            "space",
+            "tags",
+            "timeseries",
+            "timeseries|aliases",
+            "timeseries|description",
+            "timeseries|externalId",
+            "timeseries|name",
+            "timeseries|space",
+            "timeseries|tags",
         ],
         SuperNestedModel: [
             "aliases",

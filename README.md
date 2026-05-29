@@ -215,7 +215,54 @@ from pathlib import Path
 engine = Engine.from_config_file(Path("cognite-sdk-config.yaml"))
 ```
 
-### Option B: Manual Setup
+### Option B: User Token
+
+Use this when you already have a CDF user access token and want the engine to
+authenticate with that token directly.
+
+```python
+from industrial_model import DataModelId, Engine
+
+engine = Engine.from_user_token(
+    user_token="eyJhbGciOi...",
+    project="my-cdf-project",
+    cluster="westeurope-1",
+    data_model_id=DataModelId(
+        external_id="CogniteCore",
+        space="cdf_cdm",
+        version="v1",
+    ),
+)
+```
+
+You can pass `base_url="https://<cluster>.cognitedata.com"` instead of `cluster`.
+
+### CLI Generator
+
+Generate a typed client directly from a CDF data model:
+
+```bash
+industrial_model generate \
+  --token "$CDF_TOKEN" \
+  --project my-cdf-project \
+  --base-url https://westeurope-1.cognitedata.com \
+  --data-model cdf_cdm/CogniteCore/v1 \
+  --output ./generated \
+  --client-name CogniteCoreClient
+```
+
+To retrieve a user token through browser login:
+
+```bash
+industrial_model login
+```
+
+Pass `--client-id <oauth-client-id>` to `generate` or `login` when your CDF
+tenant requires a specific OAuth client for browser login. The generator also
+supports `--external-id`, `--space`, `--version`, and `--output-dir` aliases for
+existing workflows.
+
+### Option C: Manual Setup
 
 ```python
 from cognite.client import CogniteClient
