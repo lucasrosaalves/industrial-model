@@ -48,10 +48,7 @@ def test_generate_engine_params_rejects_invalid_config_shape(tmp_path: Path) -> 
 def test_generate_engine_params_requires_cognite_section(tmp_path: Path) -> None:
     config_path = tmp_path / "engine.yaml"
     config_path.write_text(
-        "data_model:\n"
-        "  space: cdf_cdm\n"
-        "  external_id: CogniteCore\n"
-        "  version: v1\n",
+        "data_model:\n  space: cdf_cdm\n  external_id: CogniteCore\n  version: v1\n",
         encoding="utf-8",
     )
 
