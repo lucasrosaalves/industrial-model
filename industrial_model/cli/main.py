@@ -1,7 +1,7 @@
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Annotated, Any
+from typing import Annotated, Any, cast
 
 import typer
 
@@ -332,20 +332,63 @@ def _prompt_data_model(token: str, project: str, base_url: str) -> Any:
     if not data_models:
         raise RuntimeError("No data models found in this CDF project.")
 
+    identity = _prompt_data_model_identity(data_models)
+    versions = _data_models_for_identity(data_models, identity)
+    return _prompt_data_model_version(versions)
+
+
+def _data_model_identity(data_model: Any) -> tuple[str, str]:
+    return data_model.space, data_model.external_id
+
+
+def _prompt_data_model_identity(data_models: Sequence[Any]) -> tuple[str, str]:
+    from InquirerPy import inquirer
+    from InquirerPy.base.control import Choice
+
+    identities = _data_model_identities(data_models)
+    choices = [
+        Choice(
+            value=identity,
+            name=f"{identity[0]}/{identity[1]}",
+        )
+        for identity in identities
+    ]
+
+    return cast(
+        tuple[str, str],
+        inquirer.fuzzy(  # type: ignore[attr-defined]
+            message="Select data model:",
+            choices=choices,
+            max_height="50%",
+        ).execute(),
+    )
+
+
+def _data_model_identities(data_models: Sequence[Any]) -> list[tuple[str, str]]:
+    return sorted({_data_model_identity(dm) for dm in data_models})
+
+
+def _data_models_for_identity(
+    data_models: Sequence[Any], identity: tuple[str, str]
+) -> list[Any]:
+    return [dm for dm in data_models if _data_model_identity(dm) == identity]
+
+
+def _prompt_data_model_version(data_models: Sequence[Any]) -> Any:
     from InquirerPy import inquirer
     from InquirerPy.base.control import Choice
 
     choices = [
         Choice(
             value=i,
-            name=f"{dm.space}/{dm.external_id}/{dm.version}"
+            name=f"{dm.version}"
             + (f" — {dm.name}" if getattr(dm, "name", None) else ""),
         )
         for i, dm in enumerate(data_models)
     ]
 
     index = inquirer.fuzzy(  # type: ignore[attr-defined]
-        message="Select data model:",
+        message="Select data model version:",
         choices=choices,
         max_height="50%",
     ).execute()

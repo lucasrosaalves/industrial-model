@@ -436,6 +436,7 @@ def browser_login(
 
 def save_session(session: Session, config: LoginConfig = DEFAULT_LOGIN_CONFIG) -> None:
     path = config.cert_dir / "session.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
     payload = {
         "project": session.project,
         "base_url": session.base_url,

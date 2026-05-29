@@ -1,12 +1,16 @@
 import base64
 import json
 import urllib.parse
+from pathlib import Path
 
 from industrial_model.cli.auth import (
     LoginConfig,
+    Session,
     _build_authorization_url,
     decode_token_claims,
     extract_auth_from_token,
+    load_session,
+    save_session,
 )
 
 
@@ -42,6 +46,19 @@ def test_build_authorization_url_uses_client_id() -> None:
 
     assert query["client_id"] == ["custom-client-id"]
     assert query["organization_hint"] == ["my-org"]
+
+
+def test_save_session_creates_directory(tmp_path: Path) -> None:
+    config = LoginConfig(cert_dir=tmp_path / "missing" / "auth")
+    session = Session(
+        project="my-project",
+        base_url="https://az-eastus-1.cognitedata.com",
+        data_model="cdf_cdm/CogniteCore/v1",
+    )
+
+    save_session(session, config)
+
+    assert load_session(config) == session
 
 
 def _jwt(payload: dict[str, object]) -> str:

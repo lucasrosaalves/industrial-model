@@ -24,13 +24,12 @@ def generate_engine_params(
     file_env_parsed = env_sub_template.substitute(dict(os.environ))
 
     engine_config = yaml.safe_load(file_env_parsed)
-    assert isinstance(engine_config, dict), (
-        "Configuration file must contain a dictionary"
-    )
-    assert "cognite" in engine_config, "Configuration must contain 'cognite' section"
-    assert "data_model" in engine_config, (
-        "Configuration must contain 'data_model' section"
-    )
+    if not isinstance(engine_config, dict):
+        raise ValueError("Configuration file must contain a dictionary")
+    if "cognite" not in engine_config:
+        raise ValueError("Configuration must contain 'cognite' section")
+    if "data_model" not in engine_config:
+        raise ValueError("Configuration must contain 'data_model' section")
 
     client = CogniteClient.load(engine_config["cognite"])
     dm_id = DataModelId.model_validate(engine_config["data_model"])

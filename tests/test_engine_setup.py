@@ -1,7 +1,13 @@
+from pathlib import Path
+
+import pytest
 from cognite.client.config import global_config
 
 from industrial_model import AsyncEngine, DataModelId, Engine
-from industrial_model.engines._internal import generate_engine_params_from_user_token
+from industrial_model.engines._internal import (
+    generate_engine_params,
+    generate_engine_params_from_user_token,
+)
 
 DATA_MODEL_ID = DataModelId(
     external_id="CogniteCore",
@@ -29,6 +35,28 @@ def test_generate_engine_params_from_user_token() -> None:
         "Bearer user-token",
     )
     assert data_model_id == DATA_MODEL_ID
+
+
+def test_generate_engine_params_rejects_invalid_config_shape(tmp_path: Path) -> None:
+    config_path = tmp_path / "engine.yaml"
+    config_path.write_text("- not-a-dict\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="must contain a dictionary"):
+        generate_engine_params(config_path)
+
+
+def test_generate_engine_params_requires_cognite_section(tmp_path: Path) -> None:
+    config_path = tmp_path / "engine.yaml"
+    config_path.write_text(
+        "data_model:\n"
+        "  space: cdf_cdm\n"
+        "  external_id: CogniteCore\n"
+        "  version: v1\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="cognite"):
+        generate_engine_params(config_path)
 
 
 def test_engine_from_user_token() -> None:
