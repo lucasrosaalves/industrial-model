@@ -6,6 +6,9 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from cognite.client import ClientConfig, CogniteClient
+from cognite.client.config import global_config
+from cognite.client.credentials import Token
 from cognite.client.data_classes.data_modeling import ContainerId, MappedProperty, View
 from cognite.client.data_classes.data_modeling.data_types import DirectRelation, Text
 from cognite.client.data_classes.data_modeling.ids import PropertyId, ViewId
@@ -13,7 +16,7 @@ from cognite.client.data_classes.data_modeling.views import MultiReverseDirectRe
 
 from industrial_model.cli.config import GeneratorConfig
 from industrial_model.cli.definitions import ViewDefinition
-from industrial_model.cli.generator import generate_from_views
+from industrial_model.cli.generator import _extract_cluster, generate_from_views
 from industrial_model.config import DataModelId
 
 
@@ -42,6 +45,13 @@ def test_view_definition_maps_cdf_properties_to_model_fields() -> None:
     )
 
 
+def test_extract_cluster_from_base_url() -> None:
+    assert _extract_cluster("https://westeurope-1.cognitedata.com") == "westeurope-1"
+    assert _extract_cluster("https://api.cognitedata.com/") == "api"
+    assert _extract_cluster("https://example.com") is None
+    assert _extract_cluster(None) is None
+
+
 def test_generate_from_views_writes_compileable_package(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -54,6 +64,7 @@ def test_generate_from_views_writes_compileable_package(
             space="cdf_cdm",
             version="v1",
         ),
+        base_url="https://westeurope-1.cognitedata.com",
     )
 
     generate_from_views(
@@ -78,6 +89,13 @@ def test_generate_from_views_writes_compileable_package(
 
     facade_content = (output_path / "cognite_core_client.py").read_text()
     assert "class CogniteCoreClient" in facade_content
+    assert "DATA_MODEL_ID = DataModelId(" in facade_content
+    assert 'DEFAULT_CLUSTER: str | None = "westeurope-1"' in facade_content
+    assert "base_url" not in facade_content
+    assert "def __init__(self, engine: CogniteClient) -> None: ..." in (
+        facade_content
+    )
+    assert "user_token: UserToken" in facade_content
     assert "self.cognite_asset = CogniteAssetClient(engine)" in facade_content
     assert "self.cognite_equipment = CogniteEquipmentClient(engine)" in facade_content
     assert 'Literal["name", "parent", "class", "equipment"]' not in facade_content
@@ -172,9 +190,42 @@ def test_generate_from_views_writes_compileable_package(
     monkeypatch.syspath_prepend(str(tmp_path))
     sys.modules.pop("generated_client", None)
     module = importlib.import_module("generated_client")
+    facade_module = importlib.import_module("generated_client.cognite_core_client")
     assert hasattr(module, "CogniteCoreClient")
     assert not hasattr(module, "CogniteAsset")
     assert not hasattr(module, "CogniteEquipment")
+    assert facade_module.DATA_MODEL_ID == config.data_model
+    assert facade_module.DEFAULT_CLUSTER == "westeurope-1"
+
+    global_config.disable_pypi_version_check = True
+    cognite_client = CogniteClient(
+        ClientConfig(
+            client_name="test-client",
+            project="test-project",
+            credentials=Token("test-token"),
+            cluster="api",
+        )
+    )
+    client_from_cognite_client = module.CogniteCoreClient(cognite_client)
+    passed_cognite_client = (
+        client_from_cognite_client.engine._cognite_adapter._cognite_client
+    )
+    assert passed_cognite_client.config.project == "test-project"
+
+    client_from_token = module.CogniteCoreClient(
+        user_token="test-token",
+        project="test-project",
+    )
+    generated_cognite_client = (
+        client_from_token.engine._cognite_adapter._cognite_client
+    )
+    assert generated_cognite_client.config.base_url == (
+        "https://westeurope-1.cognitedata.com"
+    )
+    assert generated_cognite_client.config.credentials.authorization_header() == (
+        "Authorization",
+        "Bearer test-token",
+    )
     models_module = importlib.import_module("generated_client.models")
     assert models_module.CogniteAsset.__name__ == "CogniteAsset"
     assert models_module.CogniteEquipment.__name__ == "CogniteEquipment"
