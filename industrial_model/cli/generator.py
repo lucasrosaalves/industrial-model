@@ -4,10 +4,13 @@ import sys
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 from cognite.client import ClientConfig, CogniteClient
 from cognite.client.credentials import Token
 from cognite.client.data_classes.data_modeling import View
+
+from industrial_model.config import DataModelId
 
 from .config import GeneratorConfig, InstanceSpaceConfig
 from .definitions import ViewDefinition, resolve_all_relation_paths
@@ -32,6 +35,8 @@ def generate_from_views(
         output_path,
         view_definitions=view_definitions,
         client_name=config.client_name,
+        data_model=config.data_model,
+        cluster=_extract_cluster(config.base_url),
     )
     _format_output_path(output_path)
 
@@ -95,6 +100,8 @@ def _write_package_files(
     *,
     view_definitions: Sequence[ViewDefinition],
     client_name: str,
+    data_model: DataModelId,
+    cluster: str | None,
 ) -> None:
     env = _create_jinja_environment()
     paths = {
@@ -108,6 +115,10 @@ def _write_package_files(
         "view_definitions": view_definitions,
         "client_name": client_name,
         "client_module_name": to_snake(client_name),
+        "data_model_external_id": repr(data_model.external_id),
+        "data_model_space": repr(data_model.space),
+        "data_model_version": repr(data_model.version),
+        "default_cluster": repr(cluster),
     }
     for template_name, path in paths.items():
         path.write_text(
@@ -145,6 +156,22 @@ def _create_jinja_environment() -> Any:
         autoescape=False,
         keep_trailing_newline=True,
     )
+
+
+def _extract_cluster(base_url: str | None) -> str | None:
+    if base_url is None:
+        return None
+
+    hostname = urlparse(base_url).hostname
+    if hostname is None:
+        return None
+
+    cognite_suffix = ".cognitedata.com"
+    if hostname.endswith(cognite_suffix):
+        cluster = hostname[: -len(cognite_suffix)]
+        return cluster or None
+
+    return None
 
 
 def _format_output_path(output_path: Path) -> None:

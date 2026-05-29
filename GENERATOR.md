@@ -135,19 +135,28 @@ generated/
 
 ### Setup
 
-```python
-from industrial_model import Engine
-from pathlib import Path
+Generated clients can still be instantiated with an existing `Engine`, but they
+also know the generated data model id and can create the engine for you:
 
-engine = Engine.from_config_file(Path("cognite-sdk-config.yaml"))
+```python
+from generated import CogniteCoreClient
+
+client = CogniteCoreClient(
+    user_token="<bearer-token>",
+    project="my-cdf-project",
+)
 ```
+
+If the generated package does not include a default cluster, pass
+`cluster="<cluster>"`.
 
 ### Instantiate the facade
 
 ```python
 from generated import CogniteCoreClient
 
-client = CogniteCoreClient(engine)
+client = CogniteCoreClient(engine)  # existing industrial_model.Engine
+client = CogniteCoreClient(cognite_client)  # existing CogniteClient
 
 # Each view is exposed as an attribute
 client.cognite_asset   # CogniteAssetClient

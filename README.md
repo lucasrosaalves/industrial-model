@@ -262,6 +262,28 @@ tenant requires a specific OAuth client for browser login. The generator also
 supports `--external-id`, `--space`, `--version`, and `--output-dir` aliases for
 existing workflows.
 
+Generated clients embed the selected data model id, so you can instantiate them
+without building an `Engine` yourself:
+
+```python
+from generated import CogniteCoreClient
+
+client = CogniteCoreClient(
+    user_token="<bearer-token>",
+    project="my-cdf-project",
+)
+```
+
+The generated client uses the cluster extracted during generation. Override it
+with `cluster="<cluster>"` when needed.
+
+You can also pass an existing `CogniteClient` or `Engine`:
+
+```python
+client = CogniteCoreClient(cognite_client)
+client = CogniteCoreClient(engine)
+```
+
 ### Option C: Manual Setup
 
 ```python
