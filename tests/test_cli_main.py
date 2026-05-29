@@ -1,5 +1,6 @@
 import base64
 import json
+import re
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -55,10 +56,11 @@ def test_parse_data_model_requires_space_external_id_and_version() -> None:
 
 def test_generate_help_does_not_include_config_option() -> None:
     result = runner.invoke(app, ["generate", "--help"])
+    output = re.sub(r"\x1b\[[0-9;]*m", "", result.output)
 
     assert result.exit_code == 0
-    assert "--config" not in result.output
-    assert "--token" in result.output
+    assert "--config" not in output
+    assert "--token" in output
 
 
 def test_data_model_selection_groups_versions_by_space_and_external_id() -> None:
