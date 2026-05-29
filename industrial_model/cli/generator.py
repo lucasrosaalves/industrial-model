@@ -100,7 +100,6 @@ def _write_package_files(
     paths = {
         "__init__.j2": output_path / "__init__.py",
         "clients_facade.j2": output_path / f"{to_snake(client_name)}.py",
-        "view_client.j2": output_path / "_view_client.py",
         "models.j2": output_path / "models.py",
     }
     (output_path / "py.typed").touch()

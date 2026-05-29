@@ -3,9 +3,9 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any, Generic, TypeVar, cast
 
-from industrial_model import (
+from industrial_model.engines import Engine
+from industrial_model.models import (
     AggregatedViewInstance,
-    Engine,
     PaginatedResult,
     WritableViewInstance,
 )

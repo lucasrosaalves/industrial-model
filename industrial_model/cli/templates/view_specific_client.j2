@@ -1,7 +1,7 @@
 from industrial_model import Engine, PaginatedResult
 from industrial_model.queries import build_query_statement
+from industrial_model.view_client import ViewClient
 
-from .._view_client import ViewClient
 from .filters import {{ view_definition.view_name }}Filter
 from .models import {{ view_definition.view_name }}, {{ view_definition.view_name }}Aggregation
 from .types import (

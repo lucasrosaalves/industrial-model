@@ -65,7 +65,7 @@ def test_generate_from_views_writes_compileable_package(
     assert (output_path / "cognite_core_client.py").exists()
     assert not (output_path / "clients_facade.py").exists()
     assert not (output_path / "clients.py").exists()
-    assert (output_path / "_view_client.py").exists()
+    assert not (output_path / "_view_client.py").exists()
     assert not (output_path / "clients_async.py").exists()
     assert not (output_path / "clients_sync.py").exists()
     assert not (output_path / "models").exists()
@@ -76,21 +76,6 @@ def test_generate_from_views_writes_compileable_package(
     assert (output_path / "cognite_asset" / "filters.py").exists()
     assert (output_path / "cognite_asset" / "types.py").exists()
 
-    view_client_content = (output_path / "_view_client.py").read_text()
-    assert "class ViewClient" in view_client_content
-    assert "def query(" in view_client_content
-    assert "async def query_async(" in view_client_content
-    assert (
-        "query_properties: list[_TQueryProperty] | None = None" in view_client_content
-    )
-    assert "group_by_properties: list[_TGroupBy] | None = None" in view_client_content
-    assert (
-        "aggregation_property: _TAggregationProperty | None = None"
-        in view_client_content
-    )
-    assert "DUMMY_AGGREGATION_MAKER" not in view_client_content
-    assert "query_complete" not in view_client_content
-
     facade_content = (output_path / "cognite_core_client.py").read_text()
     assert "class CogniteCoreClient" in facade_content
     assert "self.cognite_asset = CogniteAssetClient(engine)" in facade_content
@@ -98,6 +83,7 @@ def test_generate_from_views_writes_compileable_package(
     assert 'Literal["name", "parent", "class", "equipment"]' not in facade_content
 
     asset_client_content = (output_path / "cognite_asset" / "client.py").read_text()
+    assert "from industrial_model.view_client import ViewClient" in asset_client_content
     assert "class CogniteAssetClient(" in asset_client_content
     assert "CogniteAssetQueryProperty" in asset_client_content
     assert "CogniteAssetGroupByProperty" in asset_client_content

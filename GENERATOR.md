@@ -102,7 +102,6 @@ Running the generator for a data model with views `CogniteAsset` and `CogniteEqu
 generated/
 ├── __init__.py               # exports CogniteCoreClient
 ├── cognite_core_client.py    # facade class
-├── _view_client.py           # generic base ViewClient
 ├── models.py                 # all models re-exported
 ├── cognite_asset/
 │   ├── __init__.py
@@ -124,7 +123,6 @@ generated/
 |------|----------|
 | `__init__.py` | Exports the facade class by name |
 | `{client_module}.py` | Facade class; one attribute per view, each an instance of its view client |
-| `_view_client.py` | Base `ViewClient[T, TAgg, TFilter, ...]` with query, search, aggregate, upsert, and delete methods |
 | `models.py` | Re-exports all view models from the per-view packages |
 | `{view}/models.py` | `{View}` (writable model) and `{View}Aggregation` (aggregation model) |
 | `{view}/filters.py` | `{View}Filter` typed dict with one key per filterable property |
