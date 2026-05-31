@@ -131,89 +131,11 @@ generated/
 
 ---
 
-## Using the generated client
+## Next step
 
-### Setup
-
-Generated clients can still be instantiated with an existing `Engine`, but they
-also know the generated data model id and can create the engine for you:
-
-```python
-from generated import CogniteCoreClient
-
-client = CogniteCoreClient(
-    user_token="<bearer-token>",
-    project="my-cdf-project",
-)
-```
-
-If the generated package does not include a default cluster, pass
-`cluster="<cluster>"`.
-
-### Instantiate the facade
-
-```python
-from generated import CogniteCoreClient
-
-client = CogniteCoreClient(engine)  # existing industrial_model.Engine
-client = CogniteCoreClient(cognite_client)  # existing CogniteClient
-
-# Each view is exposed as an attribute
-client.cognite_asset   # CogniteAssetClient
-client.cognite_equipment  # CogniteEquipmentClient
-```
-
-### Query
-
-```python
-results = client.cognite_asset.query(
-    filters={"name": "Pump-001"},
-    limit=100,
-)
-# results: PaginatedResult[CogniteAsset]
-# results.data → list[CogniteAsset]
-```
-
-### Search
-
-```python
-results = client.cognite_asset.search(
-    query="pump equipment",
-    query_properties=["name", "description"],
-    filters={"aliases": ["pump"]},
-)
-```
-
-### Aggregate
-
-```python
-results = client.cognite_asset.aggregate(
-    aggregate_type="count",
-    group_by_properties=["name"],
-    limit=100,
-)
-# results: list[CogniteAssetAggregation]
-```
-
-### Upsert and delete
-
-```python
-# Upsert
-client.cognite_asset.upsert([asset1, asset2])
-
-# Delete
-client.cognite_asset.delete([asset1, asset2])
-```
-
-### Async
-
-Every method has an `_async` counterpart:
-
-```python
-results = await client.cognite_asset.query_async(filters={"name": "Pump-001"})
-await client.cognite_asset.upsert_async([asset1])
-await client.cognite_asset.delete_async([asset1])
-```
+After generating a package, see [Generated Client Usage](GENERATED_CLIENT.md) for
+client construction, rich query/filter examples, search, aggregations, mutations,
+pagination, and async usage.
 
 ---
 
