@@ -262,6 +262,10 @@ tenant requires a specific OAuth client for browser login. The generator also
 supports `--external-id`, `--space`, `--version`, and `--output-dir` aliases for
 existing workflows.
 
+For details, see [CLI Generator](GENERATOR.md) for generation and
+[Generated Client Usage](GENERATED_CLIENT.md) for querying, search,
+aggregations, and mutations.
+
 Generated clients embed the selected data model id, so you can instantiate them
 without building an `Engine` yourself:
 
