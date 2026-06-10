@@ -100,6 +100,7 @@ class RelationDefinition(BaseModel):
     property: str
     target_view_external_id: str
     is_list: bool = False
+    target_view_available: bool = True
 
 
 class ViewDefinition(BaseModel):
@@ -263,6 +264,7 @@ class ViewDefinition(BaseModel):
         relation_map = {
             r.field_name: to_pascal(r.target_view_external_id)
             for r in self.relation_fields
+            if r.target_view_available
         }
         result = []
         for field in [*self.search_fields, *self.regular_fields]:
@@ -289,7 +291,9 @@ class ViewDefinition(BaseModel):
     def typeddict_fields(self) -> list[str]:
         result: list[str] = []
         relation_fields_by_name = {
-            relation.field_name: relation for relation in self.relation_fields
+            relation.field_name: relation
+            for relation in self.relation_fields
+            if relation.target_view_available
         }
         rendered_properties: set[str] = set()
         for field in self.search_fields:
@@ -302,7 +306,11 @@ class ViewDefinition(BaseModel):
                 result.append(f'        "{property_}": {ft},')
                 rendered_properties.add(property_)
         for relation in self.relation_fields:
-            if not relation.is_list and relation.property not in rendered_properties:
+            if (
+                relation.target_view_available
+                and not relation.is_list
+                and relation.property not in rendered_properties
+            ):
                 result.append(
                     f'        "{relation.property}": '
                     f'"{to_pascal(relation.target_view_external_id)}Filter",'
@@ -343,7 +351,8 @@ class ViewDefinition(BaseModel):
         targets = {
             relation.target_view_external_id
             for relation in self.relation_fields
-            if to_pascal(relation.target_view_external_id) != self.view_name
+            if relation.target_view_available
+            and to_pascal(relation.target_view_external_id) != self.view_name
         }
         return sorted(
             (
@@ -360,6 +369,7 @@ class ViewDefinition(BaseModel):
             relation.target_view_external_id
             for relation in self.relation_fields
             if not relation.is_list
+            and relation.target_view_available
             and to_pascal(relation.target_view_external_id) != self.view_name
         }
         return sorted(
@@ -399,7 +409,11 @@ class ViewDefinition(BaseModel):
 
     @property
     def include_property_literal(self) -> str:
-        fields = [relation.property for relation in self.relation_fields]
+        fields = [
+            relation.property
+            for relation in self.relation_fields
+            if relation.target_view_available
+        ]
         fields_as_str = ", ".join(f'"{field}"' for field in fields)
         return f"Literal[{fields_as_str}]" if fields else "str"
 
@@ -461,6 +475,9 @@ def _collect_nested_relation_paths(
 
     paths: list[str] = []
     for relation in view_def.relation_fields:
+        if not relation.target_view_available:
+            continue
+
         full_path = (
             f"{prefix}{NESTED_SEP}{relation.property}" if prefix else relation.property
         )
@@ -485,6 +502,24 @@ def _collect_nested_relation_paths(
 def resolve_all_relation_paths(
     view_definitions: list[ViewDefinition],
 ) -> list[ViewDefinition]:
+    by_id = {vd.view_external_id: vd for vd in view_definitions}
+    view_definitions = [
+        vd.model_copy(
+            update={
+                "relation_fields": [
+                    relation.model_copy(
+                        update={
+                            "target_view_available": (
+                                relation.target_view_external_id in by_id
+                            )
+                        }
+                    )
+                    for relation in vd.relation_fields
+                ]
+            }
+        )
+        for vd in view_definitions
+    ]
     by_id = {vd.view_external_id: vd for vd in view_definitions}
     return [
         vd.model_copy(

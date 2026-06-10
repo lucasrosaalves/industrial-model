@@ -227,6 +227,50 @@ def test_generate_from_views_writes_compileable_package(
     assert models_module.CogniteEquipment.__name__ == "CogniteEquipment"
 
 
+def test_generate_from_views_keeps_missing_relation_target_as_instance_id(
+    tmp_path: Path,
+) -> None:
+    output_path = tmp_path / "generated_client"
+    config = GeneratorConfig(
+        client_name="CogniteCoreClient",
+        output_path=output_path,
+        data_model=DataModelId(
+            external_id="CogniteCore",
+            space="cdf_cdm",
+            version="v1",
+        ),
+        base_url="https://westeurope-1.cognitedata.com",
+    )
+
+    generate_from_views(
+        [_asset_view(include_equipment=True)],
+        config,
+        overwrite=False,
+    )
+
+    models_content = (output_path / "models.py").read_text()
+    assert "class CogniteEquipment(" not in models_content
+    assert "equipment: InstanceId | None = None" in models_content
+    assert (
+        "equipment: InstanceId | CogniteEquipment | None = None" not in models_content
+    )
+
+    filters_content = (output_path / "cognite_asset" / "filters.py").read_text()
+    assert "CogniteEquipmentFilter" not in filters_content
+    assert '"equipment": InstanceIdFilter' in filters_content
+
+    asset_types_content = (output_path / "cognite_asset" / "types.py").read_text()
+    assert 'CogniteAssetIncludeProperty: TypeAlias = Literal["parent", "path"]' in (
+        asset_types_content
+    )
+
+    asset_client_content = (output_path / "cognite_asset" / "client.py").read_text()
+    assert '"equipment"' not in asset_client_content
+
+    for path in output_path.rglob("*.py"):
+        py_compile.compile(str(path), doraise=True)
+
+
 def _asset_view(*, include_equipment: bool = False) -> View:
     container = ContainerId("cdf_cdm", "CogniteAsset")
     view_id = ViewId("cdf_cdm", "CogniteAsset", "v1")
