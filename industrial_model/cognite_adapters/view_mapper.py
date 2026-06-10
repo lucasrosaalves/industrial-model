@@ -2,6 +2,7 @@ import asyncio
 
 from cognite.client import AsyncCogniteClient
 from cognite.client.data_classes.data_modeling import (
+    PropertyId,
     View,
     ViewId,
 )
@@ -56,9 +57,10 @@ class ViewMapper:
     def _get_new_dependency_view_ids(self, views: list[View]) -> list[ViewId]:
         view_ids = {view.external_id for view in views}
         views_from_dependencies = [
-            self._try_extract_view_id(view_property)
+            view_id_
             for view in views
             for view_property in view.properties.values()
+            for view_id_ in self._try_extract_view_ids(view_property)
         ]
         new_views: set[ViewId] = set()
         for views_dependency in views_from_dependencies:
@@ -70,9 +72,19 @@ class ViewMapper:
                 new_views.add(views_dependency)
         return list(new_views)
 
-    def _try_extract_view_id(self, view_property: ViewProperty) -> ViewId | None:
+    def _try_extract_view_ids(self, view_property: ViewProperty) -> list[ViewId]:
+        entries: set[ViewId] = set()
+
         if hasattr(view_property, "source") and isinstance(
             view_property.source, ViewId
         ):
-            return view_property.source
-        return None
+            entries.add(view_property.source)
+
+        if (
+            hasattr(view_property, "through")
+            and isinstance(view_property.through, PropertyId)
+            and isinstance(view_property.through.source, ViewId)
+        ):
+            entries.add(view_property.through.source)
+
+        return list(entries)
