@@ -1,6 +1,6 @@
 [project]
 name = "industrial-model"
-version = "1.6.2"
+version = "1.6.3"
 description = "Industrial Model ORM"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -45,8 +45,8 @@ packages = ["industrial_model"]
 Homepage = 'https://github.com/lucasrosaalves/industrial-model'
 Source = 'https://github.com/lucasrosaalves/industrial-model'
 
-[tool.uv]
-dev-dependencies = [
+[dependency-groups]
+dev = [
     "mypy>=1.15.0,<1.16",
     "pytest>=8.3.5,<8.4",
     "python-dotenv>=1.1.0,<1.2",

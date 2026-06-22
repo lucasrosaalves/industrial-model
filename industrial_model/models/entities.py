@@ -86,6 +86,9 @@ class ViewInstance(InstanceId):
             return []
         return self._edges.get(edge_map_key, [])
 
+    def as_instance_id(self) -> InstanceId:
+        return InstanceId(external_id=self.external_id, space=self.space)
+
     def generate_model_id(
         self,
         fields: list[str] | list[Column] | list[Any],
