@@ -1,3 +1,5 @@
+import pytest
+
 from industrial_model import (
     AggregatedViewInstance,
     InstanceId,
@@ -7,6 +9,8 @@ from industrial_model import (
 )
 
 from .hubs import generate_engine
+
+pytestmark = pytest.mark.integration
 
 
 def test_engine_aggregate() -> None:

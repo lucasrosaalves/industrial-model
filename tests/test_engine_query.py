@@ -1,9 +1,13 @@
 import asyncio
 
+import pytest
+
 from industrial_model import Engine, PaginatedResult, col, select
 
 from .hubs import generate_engine
 from .models import CogniteAsset, CogniteAssetType, CogniteDescribable, CogniteEquipment
+
+pytestmark = pytest.mark.integration
 
 
 def test_engine_query_describable() -> None:

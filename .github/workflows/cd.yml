@@ -31,8 +31,11 @@ jobs:
       - name: Sync deps
         run: uv sync --locked --all-extras --dev
 
-      - name: Test
-        run: source ./scripts/test.sh
+      - name: Unit tests
+        run: source ./scripts/test-unit.sh
+
+      - name: Integration tests
+        run: source ./scripts/test-integration.sh
 
       - name: Build
         run: source ./scripts/build.sh
