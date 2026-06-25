@@ -5,10 +5,8 @@ on:
     branches: [main]
 
 jobs:
-  build:
+  test:
     runs-on: ubuntu-latest
-    environment:
-      name: prod
     steps:
       - uses: actions/checkout@v5
 
@@ -19,6 +17,9 @@ jobs:
 
       - name: Sync deps
         run: uv sync --locked --all-extras --dev
+
+      - name: Unit tests
+        run: source ./scripts/test-unit.sh
 
       - name: Build
         run: source ./scripts/build.sh

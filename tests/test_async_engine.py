@@ -1,5 +1,7 @@
 import asyncio
 
+import pytest
+
 from industrial_model import (
     AggregatedViewInstance,
     InstanceId,
@@ -13,6 +15,8 @@ from industrial_model import (
 
 from .hubs import generate_async_engine, generate_engine
 from .models import CogniteAsset, CogniteDescribable, CogniteEquipment
+
+pytestmark = pytest.mark.integration
 
 
 def test_engine_query_async_describable() -> None:
