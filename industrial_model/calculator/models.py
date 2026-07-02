@@ -8,9 +8,9 @@ from pydantic import BaseModel
 from industrial_model.models import InstanceId
 
 
-class CalculationResult(BaseModel):
-    timestamps: list[datetime]
-    values: list[float]
+class DataPoint(BaseModel):
+    timestamp: datetime
+    value: float
 
 
 class TimeSeriesParameter(BaseModel):
@@ -26,3 +26,8 @@ class CalculatorParameter(TimeSeriesParameter):
 class CalculatorQuery(BaseModel):
     formula: str
     parameters: list[CalculatorParameter]
+
+
+class CalculationResult(BaseModel):
+    query: CalculatorQuery
+    datapoints: list[DataPoint]

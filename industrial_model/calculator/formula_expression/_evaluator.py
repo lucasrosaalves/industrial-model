@@ -29,6 +29,15 @@ _BINARY_OPS: dict[type[ast.operator], Callable[[float, float], float]] = {
     ast.Mod: operator.mod,
 }
 
+_COMPARE_OPS: dict[type[ast.cmpop], Callable[[float, float], bool]] = {
+    ast.Eq: operator.eq,
+    ast.NotEq: operator.ne,
+    ast.Lt: operator.lt,
+    ast.LtE: operator.le,
+    ast.Gt: operator.gt,
+    ast.GtE: operator.ge,
+}
+
 # A value is either a single scalar (broadcast across the whole series) or an
 # already-materialized per-element sequence. Keeping constant operands as
 # scalars avoids allocating length-N tuples for them and skips the element-wise
@@ -41,7 +50,18 @@ def evaluate_tree(
     environment: dict[str, tuple[float, ...]],
     *,
     length: int,
+    has_conditional: bool = False,
 ) -> tuple[float, ...]:
+    if has_conditional:
+        # ``if``/``else`` branches must only be evaluated for the elements that
+        # select them (e.g. a division-by-zero guard's ``else`` branch must
+        # never run for elements where the guarded division is safe). This
+        # requires evaluating index-by-index instead of the whole-series
+        # vectorized path below.
+        return tuple(
+            _evaluate_node_at(tree.body, environment, index) for index in range(length)
+        )
+
     result = _evaluate_node(tree.body, environment)
     if isinstance(result, tuple):
         return result
@@ -70,6 +90,64 @@ def _evaluate_node(node: ast.AST, environment: dict[str, tuple[float, ...]]) -> 
         if isinstance(operand, tuple):
             return tuple(op(value) for value in operand)
         return op(operand)
+
+    msg = f"unsupported formula element: {type(node).__name__}"
+    raise TypeError(msg)
+
+
+def _evaluate_node_at(
+    node: ast.AST, environment: dict[str, tuple[float, ...]], index: int
+) -> float:
+    """Evaluate a single series element, short-circuiting conditional branches.
+
+    Used only for formulas containing ``if``/``else``, comparisons, or boolean
+    operators, so that the branch not selected for a given element (e.g. the
+    numerator/denominator of a division-by-zero guard) is never evaluated for
+    that element.
+    """
+
+    if isinstance(node, ast.Name):
+        return environment[node.id][index]
+
+    if isinstance(node, ast.Constant):
+        assert isinstance(node.value, (int, float)) and not isinstance(node.value, bool)
+        return float(node.value)
+
+    if isinstance(node, ast.BinOp):
+        left = _evaluate_node_at(node.left, environment, index)
+        right = _evaluate_node_at(node.right, environment, index)
+        return _BINARY_OPS[type(node.op)](left, right)
+
+    if isinstance(node, ast.UnaryOp):
+        operand = _evaluate_node_at(node.operand, environment, index)
+        return _UNARY_OPS[type(node.op)](operand)
+
+    if isinstance(node, ast.Compare):
+        left = _evaluate_node_at(node.left, environment, index)
+        result = True
+        for op, comparator in zip(node.ops, node.comparators, strict=True):
+            right = _evaluate_node_at(comparator, environment, index)
+            if not _COMPARE_OPS[type(op)](left, right):
+                result = False
+                break
+            left = right
+        return 1.0 if result else 0.0
+
+    if isinstance(node, ast.BoolOp):
+        if isinstance(node.op, ast.And):
+            result = all(
+                _evaluate_node_at(value, environment, index) for value in node.values
+            )
+        else:
+            result = any(
+                _evaluate_node_at(value, environment, index) for value in node.values
+            )
+        return 1.0 if result else 0.0
+
+    if isinstance(node, ast.IfExp):
+        test = _evaluate_node_at(node.test, environment, index)
+        branch = node.body if test else node.orelse
+        return _evaluate_node_at(branch, environment, index)
 
     msg = f"unsupported formula element: {type(node).__name__}"
     raise TypeError(msg)

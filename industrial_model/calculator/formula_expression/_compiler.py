@@ -22,6 +22,9 @@ _ALLOWED_AST_NODES = (
     ast.Name,
     ast.Load,
     ast.Constant,
+    ast.IfExp,
+    ast.Compare,
+    ast.BoolOp,
 )
 _ALLOWED_OPERATORS = (
     ast.Add,
@@ -33,6 +36,19 @@ _ALLOWED_OPERATORS = (
     ast.UAdd,
     ast.USub,
 )
+_ALLOWED_COMPARE_OPS = (
+    ast.Eq,
+    ast.NotEq,
+    ast.Lt,
+    ast.LtE,
+    ast.Gt,
+    ast.GtE,
+)
+_ALLOWED_BOOL_OPS = (
+    ast.And,
+    ast.Or,
+)
+_CONDITIONAL_NODES = (ast.IfExp, ast.Compare, ast.BoolOp)
 
 
 @dataclass(frozen=True, slots=True)
@@ -42,6 +58,7 @@ class CompiledFormula:
     tree: ast.Expression
     variables: tuple[str, ...]
     name_map: Mapping[str, str]
+    has_conditional: bool
 
 
 @lru_cache(maxsize=1024)
@@ -65,6 +82,9 @@ def _compile_normalized(raw: str) -> CompiledFormula:
         raise InvalidFormulaError(f"invalid formula syntax: {exc.msg}") from exc
 
     _validate_tree(tree, set(name_map.values()))
+    has_conditional = any(
+        isinstance(node, _CONDITIONAL_NODES) for node in ast.walk(tree)
+    )
     tree = ast.Expression(body=_fold_constants(tree.body))
     return CompiledFormula(
         raw=raw,
@@ -72,6 +92,7 @@ def _compile_normalized(raw: str) -> CompiledFormula:
         tree=tree,
         variables=tuple(variables),
         name_map=name_map,
+        has_conditional=has_conditional,
     )
 
 
@@ -116,7 +137,13 @@ def _replace_placeholders(
 
 def _validate_tree(tree: ast.Expression, allowed_names: set[str]) -> None:
     for node in ast.walk(tree):
-        if not isinstance(node, _ALLOWED_AST_NODES + _ALLOWED_OPERATORS):
+        if not isinstance(
+            node,
+            _ALLOWED_AST_NODES
+            + _ALLOWED_OPERATORS
+            + _ALLOWED_COMPARE_OPS
+            + _ALLOWED_BOOL_OPS,
+        ):
             raise InvalidFormulaError(
                 f"unsupported formula element: {type(node).__name__}"
             )
@@ -158,6 +185,27 @@ def _fold_constants(node: ast.expr) -> ast.expr:
         if isinstance(node.operand, ast.Constant):
             value = _UNARY_OPS[type(node.op)](cast(float, node.operand.value))
             return ast.copy_location(ast.Constant(value=value), node)
+        return node
+
+    # Conditional/comparison nodes are never collapsed to a single constant:
+    # doing so could fold a boolean result (rejected everywhere else as a
+    # constant type) and, worse, could eagerly evaluate a branch that runtime
+    # short-circuiting is meant to skip (e.g. the ``else`` side of a
+    # division-by-zero guard). Only their constant-only sub-expressions are
+    # folded.
+    if isinstance(node, ast.IfExp):
+        node.test = _fold_constants(node.test)
+        node.body = _fold_constants(node.body)
+        node.orelse = _fold_constants(node.orelse)
+        return node
+
+    if isinstance(node, ast.Compare):
+        node.left = _fold_constants(node.left)
+        node.comparators = [_fold_constants(c) for c in node.comparators]
+        return node
+
+    if isinstance(node, ast.BoolOp):
+        node.values = [_fold_constants(v) for v in node.values]
         return node
 
     return node

@@ -156,7 +156,7 @@ def test_calculate_returns_evaluation_result_for_simple_formula() -> None:
     calc = Calculator(_client_returning(raw))
     result = calc.calculate(_make_query("{A} * 2", [param]), _START, _END)
 
-    assert list(result.values) == [2.0, 4.0, 6.0]
+    assert [dp.value for dp in result.datapoints] == [2.0, 4.0, 6.0]
 
 
 def test_calculate_passes_window_to_client() -> None:
@@ -182,7 +182,7 @@ def test_calculate_multi_parameter_formula() -> None:
     calc = Calculator(_client_returning(raw))
     result = calc.calculate(_make_query("{A} / {B}", [p_a, p_b]), _START, _END)
 
-    assert list(result.values) == [5.0, 5.0]
+    assert [dp.value for dp in result.datapoints] == [5.0, 5.0]
 
 
 def test_calculate_with_aggregate_passes_granularity_in_query() -> None:
@@ -213,8 +213,9 @@ def test_calculate_returns_empty_result_when_data_missing_for_parameter() -> Non
 
     # A timeseries with no data in the window is treated as an empty series
     calc = Calculator(_client_returning(raw))
-    result = calc.calculate(_make_query("{A}", [param]), _START, _END)
-    assert result == CalculationResult(timestamps=[], values=[])
+    query = _make_query("{A}", [param])
+    result = calc.calculate(query, _START, _END)
+    assert result == CalculationResult(query=query, datapoints=[])
 
 
 # ---------------------------------------------------------------------------
@@ -237,7 +238,7 @@ def test_calculate_deduplicates_identical_parameter_requests() -> None:
     assert client.time_series.data.retrieve.call_count == 1
     queries_arg = client.time_series.data.retrieve.call_args.kwargs["instance_id"]
     assert len(queries_arg) == 1
-    assert list(result.values) == [6.0, 12.0]
+    assert [dp.value for dp in result.datapoints] == [6.0, 12.0]
 
 
 def test_calculate_raises_on_non_numeric_values_in_window() -> None:
@@ -273,8 +274,8 @@ def test_calculate_multiples_returns_one_result_per_query() -> None:
     )
 
     assert len(results) == 2
-    assert list(results[0].values) == [2.0, 4.0]
-    assert list(results[1].values) == [11.0, 21.0]
+    assert [dp.value for dp in results[0].datapoints] == [2.0, 4.0]
+    assert [dp.value for dp in results[1].datapoints] == [11.0, 21.0]
 
 
 def test_calculate_multiples_batches_into_single_api_call() -> None:
@@ -310,8 +311,8 @@ def test_calculate_multiples_deduplicates_shared_timeseries_across_queries() -> 
 
     queries_arg = client.time_series.data.retrieve.call_args.kwargs["instance_id"]
     assert len(queries_arg) == 1  # deduplicated to a single fetch
-    assert list(results[0].values) == [10.0, 20.0]
-    assert list(results[1].values) == [6.0, 11.0]
+    assert [dp.value for dp in results[0].datapoints] == [10.0, 20.0]
+    assert [dp.value for dp in results[1].datapoints] == [6.0, 11.0]
 
 
 def test_calculate_multiples_empty_queries_returns_empty_list() -> None:
@@ -344,5 +345,5 @@ def test_calculate_multiples_multi_parameter_query() -> None:
         _END,
     )
 
-    assert list(results[0].values) == [2.0, 2.0]
-    assert list(results[1].values) == [3.0, 6.0]
+    assert [dp.value for dp in results[0].datapoints] == [2.0, 2.0]
+    assert [dp.value for dp in results[1].datapoints] == [3.0, 6.0]

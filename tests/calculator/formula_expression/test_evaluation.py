@@ -117,3 +117,34 @@ def test_evaluates_percentage_style_formula() -> None:
         {"SCP": [10.0, 20.0], "FG": [30.0, 40.0], "IP": [10.0, 10.0]},
     )
     assert_values_equal(result, [20.0, 28.571428571428573])
+
+
+@pytest.mark.parametrize(
+    ("formula", "a_values", "b_values", "expected_values"),
+    [
+        ("{A} if {A} > {B} else {B}", [1.0, 5.0], [3.0, 2.0], [3.0, 5.0]),
+        ("{A} == {B}", [1.0, 2.0], [1.0, 3.0], [1.0, 0.0]),
+        ("{A} != {B}", [1.0, 2.0], [1.0, 3.0], [0.0, 1.0]),
+        ("{A} >= {B}", [1.0, 2.0], [1.0, 3.0], [1.0, 0.0]),
+        ("{A} <= {B}", [1.0, 2.0], [1.0, 3.0], [1.0, 1.0]),
+        ("{A} > {B} and {A} < 10", [1.0, 20.0], [0.0, 5.0], [1.0, 0.0]),
+        ("{A} > {B} or {A} < 0", [1.0, -5.0], [5.0, 0.0], [0.0, 1.0]),
+        ("1 < {A} < 10", [0.0, 5.0, 20.0], [0.0, 0.0, 0.0], [0.0, 1.0, 0.0]),
+    ],
+)
+def test_evaluates_conditional_and_comparison_formulas(
+    formula: str,
+    a_values: list[float],
+    b_values: list[float],
+    expected_values: list[float],
+) -> None:
+    result = evaluate(formula, {"A": a_values, "B": b_values})
+    assert_values_equal(result, expected_values)
+
+
+def test_nested_if_else_short_circuits_every_branch_independently() -> None:
+    result = evaluate(
+        "1/{A} if {A} != 0 else (1/{B} if {B} != 0 else 0)",
+        {"A": [0.0, 2.0, 0.0], "B": [0.0, 100.0, 4.0]},
+    )
+    assert_values_equal(result, [0.0, 0.5, 0.25])

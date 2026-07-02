@@ -32,7 +32,12 @@ def evaluate_compiled(
         # nothing to compute over: return an empty result rather than erroring.
         return ()
 
-    return evaluate_tree(formula.tree, normalized, length=length)
+    return evaluate_tree(
+        formula.tree,
+        normalized,
+        length=length,
+        has_conditional=formula.has_conditional,
+    )
 
 
 def _normalize_parameter(name: str, value: object) -> tuple[float, ...]:

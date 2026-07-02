@@ -7,7 +7,7 @@ from cognite.client import CogniteClient
 
 from .datapoints_retrieval import DatapointsRetriever
 from .formula_expression import evaluate
-from .models import CalculationResult, CalculatorQuery
+from .models import CalculationResult, CalculatorQuery, DataPoint
 
 
 class Calculator:
@@ -40,7 +40,13 @@ class Calculator:
             for param, series in zip(query.parameters, datapoints, strict=True)
         }
 
-        values = list(evaluate(query.formula, values_map))
+        values = evaluate(query.formula, values_map)
         first_series = datapoints[0] if datapoints else []
         timestamps = [ts for ts, _ in first_series]
-        return CalculationResult(timestamps=timestamps, values=values)
+        return CalculationResult(
+            query=query,
+            datapoints=[
+                DataPoint(timestamp=ts, value=value)
+                for ts, value in zip(timestamps, values, strict=True)
+            ],
+        )
