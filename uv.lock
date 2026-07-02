@@ -311,7 +311,7 @@ wheels = [
 
 [[package]]
 name = "industrial-model"
-version = "1.7.0"
+version = "1.8.0"
 source = { editable = "." }
 dependencies = [
     { name = "cognite-sdk" },
@@ -330,6 +330,8 @@ cli = [
 
 [package.dev-dependencies]
 dev = [
+    { name = "inquirerpy" },
+    { name = "jinja2" },
     { name = "mypy" },
     { name = "pytest" },
     { name = "python-dotenv" },
@@ -353,6 +355,8 @@ provides-extras = ["cli"]
 
 [package.metadata.requires-dev]
 dev = [
+    { name = "inquirerpy", specifier = ">=0.3.4,<0.4" },
+    { name = "jinja2", specifier = ">=3.1.6,<4" },
     { name = "mypy", specifier = ">=1.20.2,<2" },
     { name = "pytest", specifier = ">=9.1.1,<10" },
     { name = "python-dotenv", specifier = ">=1.2.2,<2" },
