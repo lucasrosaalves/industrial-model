@@ -28,6 +28,13 @@ def evaluate(
     ``FormulaError``: dividing or taking a modulo by zero raises
     ``ZeroDivisionError`` and an overflowing exponentiation raises
     ``OverflowError`` (both subclasses of ``ArithmeticError``).
+
+    Conditional expressions (``{A} / {B} if {B} != 0 else 0``), comparisons
+    (``==``, ``!=``, ``<``, ``<=``, ``>``, ``>=``) and boolean operators
+    (``and``, ``or``) are supported and are evaluated element-by-element: for
+    each series element, only the selected branch is evaluated, so a
+    division-by-zero (or other value-dependent failure) in the branch that is
+    *not* selected for a given element never raises.
     """
 
     values = dict(parameters or {})

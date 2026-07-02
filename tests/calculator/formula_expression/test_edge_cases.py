@@ -93,6 +93,25 @@ def test_exponentiation_overflow_raises_overflow_error() -> None:
         evaluate("{A} ** 1000000000", {"A": [10.0]})
 
 
+def test_if_else_guard_avoids_division_by_zero_per_element() -> None:
+    # The ``else`` branch is only evaluated for elements where {B} == 0, so
+    # the division is never attempted for those elements.
+    result = evaluate(
+        "{A} / {B} if {B} != 0 else 0",
+        {"A": [10.0, 20.0, 30.0], "B": [2.0, 0.0, 5.0]},
+    )
+    assert_values_equal(result, [5.0, 0.0, 6.0])
+
+
+def test_if_else_still_raises_for_the_selected_branch() -> None:
+    # Guarding the wrong side still surfaces the native ZeroDivisionError.
+    with pytest.raises(ZeroDivisionError):
+        evaluate(
+            "{A} / {B} if {B} == 0 else {A}",
+            {"A": [10.0], "B": [0.0]},
+        )
+
+
 def test_constant_only_division_by_zero_is_preserved_at_runtime() -> None:
     # Constant folding skips subtrees that raise ArithmeticError so the runtime
     # error semantics of a constant-only ``1 / 0`` are preserved.

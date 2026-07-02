@@ -104,3 +104,23 @@ def test_compile_formula_rejects_formula_without_parameters() -> None:
 def test_compile_formula_rejects_invalid_placeholder_syntax() -> None:
     with pytest.raises(InvalidFormulaError, match="invalid placeholder syntax"):
         compile_formula("{{A}}")
+
+
+def test_compiler_flags_formulas_with_conditional_expressions() -> None:
+    compiled = compile_formula("{A} / {B} if {B} != 0 else 0")
+    assert compiled.has_conditional is True
+
+
+def test_compiler_flags_formulas_with_bare_comparisons() -> None:
+    compiled = compile_formula("{A} > {B}")
+    assert compiled.has_conditional is True
+
+
+def test_compiler_flags_formulas_with_bool_ops() -> None:
+    compiled = compile_formula("{A} > 0 and {B} > 0")
+    assert compiled.has_conditional is True
+
+
+def test_compiler_does_not_flag_plain_arithmetic_as_conditional() -> None:
+    compiled = compile_formula("{A} + {B}")
+    assert compiled.has_conditional is False

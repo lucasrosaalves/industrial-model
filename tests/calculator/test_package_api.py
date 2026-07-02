@@ -19,6 +19,8 @@ def test_all_contains_expected_public_surface() -> None:
     assert set(calculator.__all__) == {
         "CalculationResult",
         "Calculator",
+        "CalculatorParameter",
         "CalculatorQuery",
+        "DataPoint",
         "evaluate",
     }
