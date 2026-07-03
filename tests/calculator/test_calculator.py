@@ -112,6 +112,7 @@ def _make_datapoints_list(
         for instance, values in entries.items()
     ]
     raw.__getitem__.side_effect = lambda idx: data_list[idx]
+    raw.__iter__.side_effect = lambda: iter(data_list)
     return raw
 
 
@@ -141,6 +142,7 @@ def _make_aggregate_datapoints_list(
     setattr(dp, aggregate, values)
     raw = MagicMock(spec=DatapointsList)
     raw.__getitem__.side_effect = lambda idx: dp if idx == 0 else None
+    raw.__iter__.side_effect = lambda: iter([dp])
     return raw
 
 

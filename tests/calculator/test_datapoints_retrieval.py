@@ -57,6 +57,7 @@ def _datapoints(
 def _client_returning(*series: Datapoints) -> MagicMock:
     raw = MagicMock(spec=DatapointsList)
     raw.__getitem__.side_effect = lambda idx: series[idx]
+    raw.__iter__.side_effect = lambda: iter(series)
     client = MagicMock()
     client.time_series.data.retrieve.return_value = raw
     return client
@@ -183,6 +184,37 @@ def test_non_numeric_datapoints_type_is_rejected() -> None:
 
     with pytest.raises(ValueError, match="expected numeric datapoints"):
         retriever.retrieve_datapoints([_param("A")], _START, _END)
+
+
+def test_more_than_100_timeseries_are_paginated_across_requests() -> None:
+    base = _base_ms()
+    params = [_param(f"P{i}", external_id=f"ts-{i}") for i in range(150)]
+    series = [
+        _datapoints(external_id=f"ts-{i}", timestamps=[base], value=[float(i)])
+        for i in range(150)
+    ]
+
+    client = MagicMock()
+    first_batch = MagicMock(spec=DatapointsList)
+    first_batch.__iter__.side_effect = lambda: iter(series[:100])
+    second_batch = MagicMock(spec=DatapointsList)
+    second_batch.__iter__.side_effect = lambda: iter(series[100:])
+    client.time_series.data.retrieve.side_effect = [first_batch, second_batch]
+
+    retriever = DatapointsRetriever(client)
+    result = retriever.retrieve_datapoints(params, _START, _END)
+
+    assert client.time_series.data.retrieve.call_count == 2
+    first_call_requests = client.time_series.data.retrieve.call_args_list[0].kwargs[
+        "instance_id"
+    ]
+    second_call_requests = client.time_series.data.retrieve.call_args_list[1].kwargs[
+        "instance_id"
+    ]
+    assert len(first_call_requests) == 100
+    assert len(second_call_requests) == 50
+    assert [value for _, value in result[0]] == [0.0]
+    assert [value for _, value in result[149]] == [149.0]
 
 
 def test_missing_aggregate_column_is_treated_as_empty_series() -> None:

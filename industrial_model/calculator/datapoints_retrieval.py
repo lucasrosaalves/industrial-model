@@ -8,6 +8,10 @@ from cognite.client.data_classes.datapoints import Datapoints, DatapointsQuery
 
 from .models import CalculatorParameter
 
+# Cognite's datapoints retrieve endpoint only accepts up to 100 time series
+# per request, so larger requests must be paginated client-side.
+_MAX_TIME_SERIES_PER_REQUEST = 100
+
 
 class DatapointsRetriever:
     def __init__(self, cognite_client: CogniteClient) -> None:
@@ -20,7 +24,12 @@ class DatapointsRetriever:
         end: datetime,
     ) -> list[list[tuple[datetime, float]]]:
         requests, index_mapping = self._build_requests(parameters, start, end)
-        raw = self._client.time_series.data.retrieve(instance_id=requests)
+
+        raw: list[Datapoints] = []
+        for i in range(0, len(requests), _MAX_TIME_SERIES_PER_REQUEST):
+            chunk = requests[i : i + _MAX_TIME_SERIES_PER_REQUEST]
+            response = self._client.time_series.data.retrieve(instance_id=chunk)
+            raw.extend(response)
 
         return [
             self._parse_datapoints(raw[index_mapping[idx]], parameter)
