@@ -5,10 +5,18 @@ from typing import Literal
 from unittest.mock import MagicMock
 
 import pytest
-from cognite.client.data_classes.datapoints import Datapoints, DatapointsList
+from cognite.client.data_classes.datapoints import Datapoints
 
 from industrial_model.calculator.datapoints_retrieval import DatapointsRetriever
-from industrial_model.calculator.models import CalculatorParameter
+from industrial_model.calculator.exceptions import (
+    CalculatorError,
+    DatapointsRetrievalError,
+)
+from industrial_model.calculator.models import (
+    MultiTimeSeriesParameter,
+    ReducerType,
+    TimeSeriesParameter,
+)
 from industrial_model.models import InstanceId
 
 _START = datetime(2024, 1, 1, tzinfo=UTC)
@@ -22,12 +30,32 @@ def _param(
     space: str = "s",
     aggregate: str | None = None,
     granularity: str | None = None,
-) -> CalculatorParameter:
-    return CalculatorParameter(
+) -> TimeSeriesParameter:
+    return TimeSeriesParameter(
         alias=alias,
         timeseries_instance_id=InstanceId(space=space, external_id=external_id),
         aggregate_type=aggregate,  # type: ignore[arg-type]
         granularity=granularity,
+    )
+
+
+def _multi_param(
+    alias: str,
+    instances: list[tuple[str, str]],
+    reducer: ReducerType,
+    *,
+    aggregate: str | None = None,
+    granularity: str | None = None,
+) -> MultiTimeSeriesParameter:
+    return MultiTimeSeriesParameter(
+        alias=alias,
+        timeseries_instance_ids=[
+            InstanceId(space=space, external_id=external_id)
+            for space, external_id in instances
+        ],
+        aggregate_type=aggregate,  # type: ignore[arg-type]
+        granularity=granularity,
+        reducer=reducer,
     )
 
 
@@ -55,11 +83,8 @@ def _datapoints(
 
 
 def _client_returning(*series: Datapoints) -> MagicMock:
-    raw = MagicMock(spec=DatapointsList)
-    raw.__getitem__.side_effect = lambda idx: series[idx]
-    raw.__iter__.side_effect = lambda: iter(series)
     client = MagicMock()
-    client.time_series.data.retrieve.return_value = raw
+    client.time_series.data.retrieve.return_value = list(series)
     return client
 
 
@@ -72,14 +97,6 @@ def _base_ms() -> int:
 # ---------------------------------------------------------------------------
 
 
-def test_aggregate_without_granularity_raises_value_error() -> None:
-    retriever = DatapointsRetriever(MagicMock())
-    param = _param("A", aggregate="average")
-
-    with pytest.raises(ValueError, match="Missing granularity for 'A'"):
-        retriever.retrieve_datapoints([param], _START, _END)
-
-
 def test_same_timeseries_and_granularity_with_different_aggregates_are_merged() -> None:
     retriever = DatapointsRetriever(MagicMock())
     avg = _param("A", aggregate="average", granularity="1h")
@@ -89,7 +106,7 @@ def test_same_timeseries_and_granularity_with_different_aggregates_are_merged() 
 
     assert len(requests) == 1
     assert requests[0].aggregates == ["average", "sum"]
-    assert index_mapping == {0: 0, 1: 0}
+    assert index_mapping == [[0], [0]]
 
 
 def test_repeated_aggregate_on_same_series_is_not_duplicated() -> None:
@@ -110,7 +127,7 @@ def test_same_timeseries_different_granularity_produces_separate_requests() -> N
     requests, index_mapping = retriever._build_requests([hourly, daily], _START, _END)
 
     assert len(requests) == 2
-    assert index_mapping == {0: 0, 1: 1}
+    assert index_mapping == [[0], [1]]
 
 
 def test_raw_and_aggregate_for_same_series_are_distinct_requests() -> None:
@@ -147,8 +164,8 @@ def test_merged_aggregates_pull_their_own_column_per_parameter() -> None:
 
     result = retriever.retrieve_datapoints([avg, total], _START, _END)
 
-    assert [value for _, value in result[0]] == [10.0, 20.0]
-    assert [value for _, value in result[1]] == [100.0, 200.0]
+    assert [value for _, value in result[0][0]] == [10.0, 20.0]
+    assert [value for _, value in result[1][0]] == [100.0, 200.0]
 
 
 def test_parse_datapoints_drops_none_values_and_aligns_timestamps() -> None:
@@ -162,8 +179,8 @@ def test_parse_datapoints_drops_none_values_and_aligns_timestamps() -> None:
 
     result = retriever.retrieve_datapoints([_param("A")], _START, _END)
 
-    assert [value for _, value in result[0]] == [1.0, 3.0]
-    first_ts = result[0][0][0]
+    assert [value for _, value in result[0][0]] == [1.0, 3.0]
+    first_ts = result[0][0][0][0]
     assert first_ts == datetime.fromtimestamp(base / 1000, tz=UTC)
 
 
@@ -174,7 +191,7 @@ def test_missing_column_is_treated_as_empty_series() -> None:
 
     result = retriever.retrieve_datapoints([_param("A")], _START, _END)
 
-    assert result == [[]]
+    assert result == [[[]]]
 
 
 def test_non_numeric_datapoints_type_is_rejected() -> None:
@@ -182,7 +199,7 @@ def test_non_numeric_datapoints_type_is_rejected() -> None:
     client = _client_returning(dp)
     retriever = DatapointsRetriever(client)
 
-    with pytest.raises(ValueError, match="expected numeric datapoints"):
+    with pytest.raises(DatapointsRetrievalError, match="expected numeric datapoints"):
         retriever.retrieve_datapoints([_param("A")], _START, _END)
 
 
@@ -195,11 +212,7 @@ def test_more_than_100_timeseries_are_paginated_across_requests() -> None:
     ]
 
     client = MagicMock()
-    first_batch = MagicMock(spec=DatapointsList)
-    first_batch.__iter__.side_effect = lambda: iter(series[:100])
-    second_batch = MagicMock(spec=DatapointsList)
-    second_batch.__iter__.side_effect = lambda: iter(series[100:])
-    client.time_series.data.retrieve.side_effect = [first_batch, second_batch]
+    client.time_series.data.retrieve.side_effect = [series[:100], series[100:]]
 
     retriever = DatapointsRetriever(client)
     result = retriever.retrieve_datapoints(params, _START, _END)
@@ -213,8 +226,135 @@ def test_more_than_100_timeseries_are_paginated_across_requests() -> None:
     ]
     assert len(first_call_requests) == 100
     assert len(second_call_requests) == 50
-    assert [value for _, value in result[0]] == [0.0]
-    assert [value for _, value in result[149]] == [149.0]
+    assert [value for _, value in result[0][0]] == [0.0]
+    assert [value for _, value in result[149][0]] == [149.0]
+
+
+def test_single_instance_id_param_returns_one_leaf_series() -> None:
+    dp = _datapoints(timestamps=[_base_ms()], value=[1.0])
+    client = _client_returning(dp)
+    retriever = DatapointsRetriever(client)
+
+    result = retriever.retrieve_datapoints([_param("A")], _START, _END)
+
+    assert len(result[0]) == 1
+    assert [value for _, value in result[0][0]] == [1.0]
+
+
+def test_multi_instance_param_requests_one_series_per_instance() -> None:
+    retriever = DatapointsRetriever(MagicMock())
+    param = _multi_param(
+        "A",
+        [("s", "ts1"), ("s", "ts2")],
+        reducer="sum",
+        aggregate="average",
+        granularity="1h",
+    )
+
+    requests, index_mapping = retriever._build_requests([param], _START, _END)
+
+    assert len(requests) == 2
+    assert index_mapping == [[0, 1]]
+
+
+def test_multi_instance_param_returns_each_leaf_series_unreduced() -> None:
+    # DatapointsRetriever only fetches and parses data - combining a
+    # parameter's series (via its reducer) is the caller's responsibility.
+    base = _base_ms()
+    dp1 = _datapoints(
+        external_id="ts1", timestamps=[base, base + 60_000], average=[1.0, 2.0]
+    )
+    dp2 = _datapoints(
+        external_id="ts2", timestamps=[base, base + 60_000], average=[10.0, 20.0]
+    )
+    client = _client_returning(dp1, dp2)
+    retriever = DatapointsRetriever(client)
+
+    param = _multi_param(
+        "A",
+        [("s", "ts1"), ("s", "ts2")],
+        reducer="sum",
+        aggregate="average",
+        granularity="1h",
+    )
+    result = retriever.retrieve_datapoints([param], _START, _END)
+
+    assert len(result) == 1
+    assert len(result[0]) == 2  # one leaf series per instance id, not reduced
+    assert [value for _, value in result[0][0]] == [1.0, 2.0]
+    assert [value for _, value in result[0][1]] == [10.0, 20.0]
+
+
+def test_shared_instance_id_across_parameters_reuses_one_request() -> None:
+    retriever = DatapointsRetriever(MagicMock())
+    first = _param("A", external_id="ts1", aggregate="average", granularity="1h")
+    second = _param("B", external_id="ts1", aggregate="average", granularity="1h")
+
+    requests, index_mapping = retriever._build_requests([first, second], _START, _END)
+
+    assert len(requests) == 1
+    assert index_mapping == [[0], [0]]
+
+
+def test_shared_instance_id_across_parameters_yields_the_same_leaf_series() -> None:
+    base = _base_ms()
+    dp = _datapoints(external_id="ts1", timestamps=[base], average=[5.0])
+    client = _client_returning(dp)
+    retriever = DatapointsRetriever(client)
+
+    first = _param("A", external_id="ts1", aggregate="average", granularity="1h")
+    second = _param("B", external_id="ts1", aggregate="average", granularity="1h")
+    result = retriever.retrieve_datapoints([first, second], _START, _END)
+
+    expected = [(datetime.fromtimestamp(base / 1000, tz=UTC), 5.0)]
+    assert result[0][0] == result[1][0] == expected
+
+
+def test_mixed_raw_and_multi_instance_aggregate_params_in_one_batch() -> None:
+    base = _base_ms()
+    raw_dp = _datapoints(external_id="raw_ts", timestamps=[base], value=[1.0])
+    agg_dp1 = _datapoints(external_id="agg_ts1", timestamps=[base], average=[2.0])
+    agg_dp2 = _datapoints(external_id="agg_ts2", timestamps=[base], average=[3.0])
+    client = _client_returning(raw_dp, agg_dp1, agg_dp2)
+    retriever = DatapointsRetriever(client)
+
+    raw_param = _param("A", external_id="raw_ts")
+    multi_param = _multi_param(
+        "B",
+        [("s", "agg_ts1"), ("s", "agg_ts2")],
+        reducer="max",
+        aggregate="average",
+        granularity="1h",
+    )
+
+    result = retriever.retrieve_datapoints([raw_param, multi_param], _START, _END)
+
+    assert len(result) == 2
+    assert len(result[0]) == 1  # raw_param: one leaf series
+    assert len(result[1]) == 2  # multi_param: two leaf series, unreduced
+    assert [value for _, value in result[0][0]] == [1.0]
+    assert [value for _, value in result[1][0]] == [2.0]
+    assert [value for _, value in result[1][1]] == [3.0]
+
+
+def test_retrieve_datapoints_preserves_parameter_order() -> None:
+    base = _base_ms()
+    dp_a = _datapoints(external_id="a", timestamps=[base], value=[1.0])
+    dp_b = _datapoints(external_id="b", timestamps=[base], value=[2.0])
+    dp_c = _datapoints(external_id="c", timestamps=[base], value=[3.0])
+    client = _client_returning(dp_a, dp_b, dp_c)
+    retriever = DatapointsRetriever(client)
+
+    params = [
+        _param("A", external_id="a"),
+        _param("B", external_id="b"),
+        _param("C", external_id="c"),
+    ]
+    result = retriever.retrieve_datapoints(params, _START, _END)
+
+    assert [value for _, value in result[0][0]] == [1.0]
+    assert [value for _, value in result[1][0]] == [2.0]
+    assert [value for _, value in result[2][0]] == [3.0]
 
 
 def test_missing_aggregate_column_is_treated_as_empty_series() -> None:
@@ -228,4 +368,38 @@ def test_missing_aggregate_column_is_treated_as_empty_series() -> None:
     param = _param("A", aggregate="average", granularity="1h")
     result = retriever.retrieve_datapoints([param], _START, _END)
 
-    assert result == [[]]
+    assert result == [[[]]]
+
+
+def test_short_cdf_response_is_rejected() -> None:
+    client = MagicMock()
+    client.time_series.data.retrieve.return_value = [
+        _datapoints(external_id="ts1", timestamps=[_base_ms()], value=[1.0])
+    ]
+    retriever = DatapointsRetriever(client)
+    params = [_param("A", external_id="ts1"), _param("B", external_id="ts2")]
+
+    with pytest.raises(
+        DatapointsRetrievalError, match="expected 2 datapoint series from CDF, got 1"
+    ):
+        retriever.retrieve_datapoints(params, _START, _END)
+
+
+def test_timestamp_and_value_length_mismatch_raises() -> None:
+    dp = _datapoints(timestamps=[_base_ms(), _base_ms() + 60_000], value=[1.0])
+    client = _client_returning(dp)
+    retriever = DatapointsRetriever(client)
+
+    with pytest.raises(
+        DatapointsRetrievalError,
+        match="CDF returned 2 timestamp\\(s\\) but 1 'value' value\\(s\\) for 'A'",
+    ):
+        retriever.retrieve_datapoints([_param("A")], _START, _END)
+
+
+def test_every_retriever_error_is_catchable_as_calculator_error() -> None:
+    dp = _datapoints(timestamps=[_base_ms()], value=None, dp_type="string")
+    retriever = DatapointsRetriever(_client_returning(dp))
+
+    with pytest.raises(CalculatorError):
+        retriever.retrieve_datapoints([_param("A")], _START, _END)
