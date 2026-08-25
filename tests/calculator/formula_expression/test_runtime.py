@@ -7,6 +7,7 @@ from industrial_model.calculator.formula_expression.exceptions import (
     FormulaError,
     ParameterError,
     ParameterLengthError,
+    ParameterTimestampError,
 )
 
 
@@ -76,6 +77,16 @@ def test_length_mismatch_ignores_unused_parameters() -> None:
 def test_parameter_errors_are_formula_errors() -> None:
     assert issubclass(ParameterError, FormulaError)
     assert issubclass(ParameterLengthError, ParameterError)
+    assert issubclass(ParameterTimestampError, ParameterError)
+
+
+def test_parameter_timestamp_error_lists_aliases() -> None:
+    error = ParameterTimestampError(["A", "B"])
+
+    assert error.aliases == ("A", "B")
+    assert "timestamp mismatch" in str(error)
+    assert "A" in str(error)
+    assert "B" in str(error)
 
 
 def test_parameter_error_message_includes_parameter_name() -> None:

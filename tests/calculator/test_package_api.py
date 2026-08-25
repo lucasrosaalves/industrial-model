@@ -17,10 +17,16 @@ def test_evaluate_is_re_exported_from_package() -> None:
 
 def test_all_contains_expected_public_surface() -> None:
     assert set(calculator.__all__) == {
+        "AlignmentMode",
         "CalculationResult",
         "Calculator",
+        "CalculatorError",
         "CalculatorParameter",
         "CalculatorQuery",
+        "ConstantParameter",
         "DataPoint",
+        "MultiTimeSeriesParameter",
+        "ReducerType",
+        "TimeSeriesParameter",
         "evaluate",
     }

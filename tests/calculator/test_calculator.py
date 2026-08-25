@@ -5,16 +5,25 @@ from unittest.mock import MagicMock
 
 import pytest
 from cognite.client.data_classes.datapoint_aggregates import Aggregate
-from cognite.client.data_classes.datapoints import Datapoints, DatapointsList
+from cognite.client.data_classes.datapoints import Datapoints
 
 from industrial_model.calculator import (
     Calculator,
 )
-from industrial_model.calculator.formula_expression.exceptions import ParameterError
+from industrial_model.calculator.formula_expression.exceptions import (
+    MissingTimeAxisError,
+    ParameterError,
+    ParameterTimestampError,
+)
 from industrial_model.calculator.models import (
+    AlignmentMode,
     CalculationResult,
     CalculatorParameter,
     CalculatorQuery,
+    ConstantParameter,
+    MultiTimeSeriesParameter,
+    ReducerType,
+    TimeSeriesParameter,
 )
 from industrial_model.models import InstanceId
 
@@ -28,10 +37,29 @@ _END = datetime(2024, 1, 2, tzinfo=UTC)
 
 def _make_param(
     alias: str, space: str = "s", external_id: str = "x"
-) -> CalculatorParameter:
-    return CalculatorParameter(
+) -> TimeSeriesParameter:
+    return TimeSeriesParameter(
         alias=alias,
         timeseries_instance_id=InstanceId(space=space, external_id=external_id),
+    )
+
+
+def _make_multi_param(
+    alias: str,
+    instances: list[tuple[str, str]],
+    reducer: ReducerType,
+    aggregate: Aggregate | None = None,
+    granularity: str | None = None,
+) -> MultiTimeSeriesParameter:
+    return MultiTimeSeriesParameter(
+        alias=alias,
+        timeseries_instance_ids=[
+            InstanceId(space=space, external_id=external_id)
+            for space, external_id in instances
+        ],
+        reducer=reducer,
+        aggregate_type=aggregate,
+        granularity=granularity,
     )
 
 
@@ -41,8 +69,8 @@ def _make_param_with_aggregate(
     granularity: str | None = None,
     space: str = "s",
     external_id: str = "x",
-) -> CalculatorParameter:
-    return CalculatorParameter(
+) -> TimeSeriesParameter:
+    return TimeSeriesParameter(
         alias=alias,
         timeseries_instance_id=InstanceId(space=space, external_id=external_id),
         aggregate_type=aggregate,
@@ -53,10 +81,12 @@ def _make_param_with_aggregate(
 def _make_query(
     formula: str,
     parameters: list[CalculatorParameter],
+    alignment: AlignmentMode = "intersect",
 ) -> CalculatorQuery:
     return CalculatorQuery(
         formula=formula,
         parameters=parameters,
+        alignment=alignment,
     )
 
 
@@ -90,17 +120,16 @@ def _ms(moment: datetime) -> int:
 def _make_datapoints_list(
     entries: dict[tuple[str, str], list[float]],
     timestamps: dict[tuple[str, str], list[int]] | None = None,
-) -> MagicMock:
+) -> list[Datapoints]:
     """A stand-in for ``DatapointsList`` that resolves items by insertion-order index.
 
     Timestamps default to one-minute steps starting at ``_START`` so that every
     value falls inside the default ``[_START, _END)`` query window.
     """
 
-    raw = MagicMock(spec=DatapointsList)
     base = _ms(_START)
     timestamps = timestamps or {}
-    data_list = [
+    return [
         _make_datapoints(
             values,
             space=instance[0],
@@ -111,12 +140,9 @@ def _make_datapoints_list(
         )
         for instance, values in entries.items()
     ]
-    raw.__getitem__.side_effect = lambda idx: data_list[idx]
-    raw.__iter__.side_effect = lambda: iter(data_list)
-    return raw
 
 
-def _client_returning(raw: MagicMock) -> MagicMock:
+def _client_returning(raw: list[Datapoints]) -> MagicMock:
     client = MagicMock()
     client.time_series.data.retrieve.return_value = raw
     return client
@@ -126,7 +152,7 @@ def _make_aggregate_datapoints_list(
     instance: tuple[str, str],
     aggregate: str,
     values: list[float],
-) -> MagicMock:
+) -> list[Datapoints]:
     """A ``DatapointsList`` stand-in holding a single aggregate series."""
 
     base = _ms(_START)
@@ -140,10 +166,7 @@ def _make_aggregate_datapoints_list(
         timestamp=[base + i * 60_000 for i in range(len(values))],
     )
     setattr(dp, aggregate, values)
-    raw = MagicMock(spec=DatapointsList)
-    raw.__getitem__.side_effect = lambda idx: dp if idx == 0 else None
-    raw.__iter__.side_effect = lambda: iter([dp])
-    return raw
+    return [dp]
 
 
 # ---------------------------------------------------------------------------
@@ -322,6 +345,380 @@ def test_calculate_multiples_empty_queries_returns_empty_list() -> None:
     results = Calculator(client).calculate_multiples([], _START, _END)
 
     assert results == []
+
+
+# ---------------------------------------------------------------------------
+# Calculator.calculate – constant parameters
+# ---------------------------------------------------------------------------
+
+
+def test_calculate_broadcasts_constant_parameter_to_series_length() -> None:
+    ts_param = _make_param("A", external_id="ts_a")
+    const_param = ConstantParameter(alias="B", value=10.0)
+
+    raw = _make_datapoints_list({("s", "ts_a"): [1.0, 2.0, 3.0]})
+    calc = Calculator(_client_returning(raw))
+
+    result = calc.calculate(
+        _make_query("{A} + {B}", [ts_param, const_param]), _START, _END
+    )
+
+    assert [dp.value for dp in result.datapoints] == [11.0, 12.0, 13.0]
+
+
+def test_calculate_broadcasts_constant_onto_intersected_timestamps() -> None:
+    ts_a = _make_param("A", external_id="ts_a")
+    ts_b = _make_param("B", external_id="ts_b")
+    const = ConstantParameter(alias="C", value=100.0)
+    raw = _make_datapoints_list({("s", "ts_a"): [1.0, 2.0, 3.0], ("s", "ts_b"): [10.0]})
+    calc = Calculator(_client_returning(raw))
+
+    result = calc.calculate(
+        _make_query("{A} + {B} + {C}", [ts_a, ts_b, const]), _START, _END
+    )
+
+    assert [dp.value for dp in result.datapoints] == [111.0]
+
+
+def test_calculate_constant_parameter_can_precede_timeseries_parameter() -> None:
+    const_param = ConstantParameter(alias="B", value=2.0)
+    ts_param = _make_param("A", external_id="ts_a")
+
+    raw = _make_datapoints_list({("s", "ts_a"): [1.0, 2.0]})
+    calc = Calculator(_client_returning(raw))
+
+    result = calc.calculate(
+        _make_query("{A} * {B}", [const_param, ts_param]), _START, _END
+    )
+
+    assert [dp.value for dp in result.datapoints] == [2.0, 4.0]
+
+
+def test_calculate_all_constant_formula_raises_missing_time_axis() -> None:
+    # Constants are broadcast onto the timestamps of the query's timeseries
+    # parameters. With no timeseries parameter there is nothing to broadcast
+    # onto, which would silently yield zero datapoints for a query that looks
+    # valid - so it is rejected instead.
+    const_param = ConstantParameter(alias="A", value=5.0)
+
+    calc = Calculator(MagicMock())
+    query = _make_query("{A} * 2", [const_param])
+
+    with pytest.raises(MissingTimeAxisError, match="no time-series parameter"):
+        calc.calculate(query, _START, _END)
+
+
+def test_missing_time_axis_error_lists_every_constant_alias() -> None:
+    calc = Calculator(MagicMock())
+    query = _make_query(
+        "{A} + {B}",
+        [
+            ConstantParameter(alias="A", value=1.0),
+            ConstantParameter(alias="B", value=2.0),
+        ],
+    )
+
+    with pytest.raises(MissingTimeAxisError) as exc_info:
+        calc.calculate(query, _START, _END)
+
+    assert exc_info.value.aliases == ("A", "B")
+
+
+# ---------------------------------------------------------------------------
+# Calculator.calculate – multiple timeseries per parameter (reducers)
+# ---------------------------------------------------------------------------
+
+
+def test_calculate_reduces_multiple_timeseries_with_sum() -> None:
+    param = _make_multi_param(
+        "A",
+        [("s", "ts1"), ("s", "ts2")],
+        reducer="sum",
+        aggregate="average",
+        granularity="1h",
+    )
+    base = _ms(_START)
+    dp1 = _make_datapoints(
+        None, space="s", external_id="ts1", timestamps=[base, base + 60_000]
+    )
+    dp1.average = [1.0, 2.0]
+    dp2 = _make_datapoints(
+        None, space="s", external_id="ts2", timestamps=[base, base + 60_000]
+    )
+    dp2.average = [10.0, 20.0]
+    raw = [dp1, dp2]
+
+    calc = Calculator(_client_returning(raw))
+    result = calc.calculate(_make_query("{A}", [param]), _START, _END)
+
+    assert [dp.value for dp in result.datapoints] == [11.0, 22.0]
+
+
+def test_calculate_reduces_multiple_timeseries_with_average() -> None:
+    param = _make_multi_param(
+        "A",
+        [("s", "ts1"), ("s", "ts2")],
+        reducer="average",
+        aggregate="average",
+        granularity="1h",
+    )
+    base = _ms(_START)
+    dp1 = _make_datapoints(None, space="s", external_id="ts1", timestamps=[base])
+    dp1.average = [4.0]
+    dp2 = _make_datapoints(None, space="s", external_id="ts2", timestamps=[base])
+    dp2.average = [10.0]
+    raw = [dp1, dp2]
+
+    calc = Calculator(_client_returning(raw))
+    result = calc.calculate(_make_query("{A}", [param]), _START, _END)
+
+    assert [dp.value for dp in result.datapoints] == [7.0]
+
+
+def test_calculate_multi_instance_parameter_with_no_common_timestamps_is_empty() -> (
+    None
+):
+    # The two series never overlap on timestamp, so the reduced parameter
+    # series is empty end-to-end, and so is the result.
+    param = _make_multi_param(
+        "A",
+        [("s", "ts1"), ("s", "ts2")],
+        reducer="sum",
+        aggregate="average",
+        granularity="1h",
+    )
+    base = _ms(_START)
+    dp1 = _make_datapoints(None, space="s", external_id="ts1", timestamps=[base])
+    dp1.average = [1.0]
+    dp2 = _make_datapoints(
+        None, space="s", external_id="ts2", timestamps=[base + 60_000]
+    )
+    dp2.average = [2.0]
+    raw = [dp1, dp2]
+
+    calc = Calculator(_client_returning(raw))
+    query = _make_query("{A}", [param])
+    result = calc.calculate(query, _START, _END)
+
+    assert result == CalculationResult(query=query, datapoints=[])
+
+
+def test_calculate_timestamps_come_from_reduced_series_not_raw_leaf_series() -> None:
+    # The first parameter is multi-instance: its two leaf series only agree
+    # on one of their two timestamps, so the reduced series (and therefore
+    # the output) has length 1, not the leaf series' length of 2.
+    multi = _make_multi_param(
+        "A",
+        [("s", "ts1"), ("s", "ts2")],
+        reducer="sum",
+        aggregate="average",
+        granularity="1h",
+    )
+    single = _make_param_with_aggregate(
+        "B", aggregate="average", granularity="1h", external_id="ts3"
+    )
+
+    base = _ms(_START)
+    dp1 = _make_datapoints(
+        None, space="s", external_id="ts1", timestamps=[base, base + 60_000]
+    )
+    dp1.average = [1.0, 2.0]
+    dp2 = _make_datapoints(None, space="s", external_id="ts2", timestamps=[base])
+    dp2.average = [10.0]
+    dp3 = _make_datapoints(None, space="s", external_id="ts3", timestamps=[base])
+    dp3.average = [100.0]
+    raw = [dp1, dp2, dp3]
+
+    calc = Calculator(_client_returning(raw))
+    result = calc.calculate(_make_query("{A} + {B}", [multi, single]), _START, _END)
+
+    assert [dp.value for dp in result.datapoints] == [111.0]
+
+
+def test_calculate_multiples_dedupes_shared_instance_across_multi_params() -> None:
+    # Two queries each reference a two-instance reduced parameter, and the
+    # two parameters share one instance id (ts_shared). That instance
+    # should be fetched once, not twice.
+    p_a = _make_multi_param(
+        "A",
+        [("s", "ts_shared"), ("s", "ts_a_only")],
+        reducer="sum",
+        aggregate="average",
+        granularity="1h",
+    )
+    p_b = _make_multi_param(
+        "B",
+        [("s", "ts_shared"), ("s", "ts_b_only")],
+        reducer="sum",
+        aggregate="average",
+        granularity="1h",
+    )
+
+    base = _ms(_START)
+
+    def _dp(external_id: str, value: float) -> Datapoints:
+        dp = _make_datapoints(
+            None, space="s", external_id=external_id, timestamps=[base]
+        )
+        dp.average = [value]
+        return dp
+
+    series = [
+        _dp("ts_shared", 1.0),
+        _dp("ts_a_only", 2.0),
+        _dp("ts_b_only", 3.0),
+    ]
+
+    client = _client_returning(series)
+    results = Calculator(client).calculate_multiples(
+        [_make_query("{A}", [p_a]), _make_query("{B}", [p_b])], _START, _END
+    )
+
+    queries_arg = client.time_series.data.retrieve.call_args.kwargs["instance_id"]
+    assert len(queries_arg) == 3  # ts_shared, ts_a_only, ts_b_only - not 4
+    assert [dp.value for dp in results[0].datapoints] == [3.0]  # 1.0 + 2.0
+    assert [dp.value for dp in results[1].datapoints] == [4.0]  # 1.0 + 3.0
+
+
+def test_calculate_multiples_honors_per_query_alignment() -> None:
+    p_a = _make_param("A", external_id="ts_a")
+    p_b = _make_param("B", external_id="ts_b")
+    raw = _make_datapoints_list(
+        {("s", "ts_a"): [1.0, 2.0], ("s", "ts_b"): [10.0, 20.0]}
+    )
+    calc = Calculator(_client_returning(raw))
+
+    intersected, strict = calc.calculate_multiples(
+        [
+            _make_query("{A} + {B}", [p_a, p_b], alignment="intersect"),
+            _make_query("{A} + {B}", [p_a, p_b], alignment="strict"),
+        ],
+        _START,
+        _END,
+    )
+
+    assert [dp.value for dp in intersected.datapoints] == [11.0, 22.0]
+    assert [dp.value for dp in strict.datapoints] == [11.0, 22.0]
+
+
+def test_calculate_intersects_mismatched_series_by_default() -> None:
+    p_a = _make_param("A", external_id="ts_a")
+    p_b = _make_param("B", external_id="ts_b")
+
+    raw = _make_datapoints_list({("s", "ts_a"): [1.0, 2.0, 3.0], ("s", "ts_b"): [10.0]})
+    calc = Calculator(_client_returning(raw))
+
+    result = calc.calculate(_make_query("{A} + {B}", [p_a, p_b]), _START, _END)
+
+    assert [dp.value for dp in result.datapoints] == [11.0]
+
+
+def test_calculate_intersects_same_length_series_with_different_timestamps() -> None:
+    p_a = _make_param("A", external_id="ts_a")
+    p_b = _make_param("B", external_id="ts_b")
+    base = _ms(_START)
+    raw = _make_datapoints_list(
+        {("s", "ts_a"): [1.0, 2.0], ("s", "ts_b"): [10.0, 20.0]},
+        timestamps={
+            ("s", "ts_a"): [base, base + 60_000],
+            ("s", "ts_b"): [base + 60_000, base + 120_000],
+        },
+    )
+    calc = Calculator(_client_returning(raw))
+
+    result = calc.calculate(_make_query("{A} + {B}", [p_a, p_b]), _START, _END)
+
+    assert [dp.value for dp in result.datapoints] == [12.0]
+    assert result.datapoints[0].timestamp == datetime.fromtimestamp(
+        (base + 60_000) / 1000, tz=UTC
+    )
+
+
+def test_calculate_intersect_with_no_overlap_is_empty() -> None:
+    multi = _make_multi_param(
+        "A",
+        [("s", "ts1"), ("s", "ts2")],
+        reducer="sum",
+        aggregate="average",
+        granularity="1h",
+    )
+    single = _make_param_with_aggregate(
+        "B", aggregate="average", granularity="1h", external_id="ts3"
+    )
+    base = _ms(_START)
+    dp1 = _make_datapoints(None, space="s", external_id="ts1", timestamps=[base])
+    dp1.average = [1.0]
+    dp2 = _make_datapoints(None, space="s", external_id="ts2", timestamps=[base])
+    dp2.average = [10.0]
+    dp3 = _make_datapoints(
+        None, space="s", external_id="ts3", timestamps=[base + 60_000]
+    )
+    dp3.average = [100.0]
+
+    query = _make_query("{A} + {B}", [multi, single])
+    result = Calculator(_client_returning([dp1, dp2, dp3])).calculate(
+        query, _START, _END
+    )
+
+    assert result == CalculationResult(query=query, datapoints=[])
+
+
+def test_calculate_strict_alignment_raises_on_mismatched_series() -> None:
+    p_a = _make_param("A", external_id="ts_a")
+    p_b = _make_param("B", external_id="ts_b")
+
+    raw = _make_datapoints_list({("s", "ts_a"): [1.0, 2.0, 3.0], ("s", "ts_b"): [1.0]})
+    calc = Calculator(_client_returning(raw))
+
+    with pytest.raises(ParameterTimestampError, match="timestamp mismatch"):
+        calc.calculate(
+            _make_query("{A} + {B}", [p_a, p_b], alignment="strict"),
+            _START,
+            _END,
+        )
+
+
+def test_calculate_strict_alignment_raises_when_same_length_but_different_times() -> (
+    None
+):
+    p_a = _make_param("A", external_id="ts_a")
+    p_b = _make_param("B", external_id="ts_b")
+    base = _ms(_START)
+    raw = _make_datapoints_list(
+        {("s", "ts_a"): [1.0, 2.0], ("s", "ts_b"): [10.0, 20.0]},
+        timestamps={
+            ("s", "ts_a"): [base, base + 60_000],
+            ("s", "ts_b"): [base + 60_000, base + 120_000],
+        },
+    )
+    calc = Calculator(_client_returning(raw))
+
+    with pytest.raises(ParameterTimestampError, match="timestamp mismatch"):
+        calc.calculate(
+            _make_query("{A} + {B}", [p_a, p_b], alignment="strict"),
+            _START,
+            _END,
+        )
+
+
+def test_calculate_multiple_constants_never_reach_the_cdf_client() -> None:
+    a = ConstantParameter(alias="A", value=2.0)
+    b = ConstantParameter(alias="B", value=3.0)
+    c = ConstantParameter(alias="C", value=4.0)
+    ts = _make_param("D", external_id="ts_d")
+
+    raw = _make_datapoints_list({("s", "ts_d"): [1.0, 1.0]})
+    client = _client_returning(raw)
+    calc = Calculator(client)
+
+    result = calc.calculate(
+        _make_query("{A} + {B} + {C} + {D}", [a, b, c, ts]), _START, _END
+    )
+
+    assert [dp.value for dp in result.datapoints] == [10.0, 10.0]
+    # Only D's time series is ever requested - A, B, C never touch the client.
+    queries_arg = client.time_series.data.retrieve.call_args.kwargs["instance_id"]
+    assert len(queries_arg) == 1
 
 
 def test_calculate_multiples_multi_parameter_query() -> None:

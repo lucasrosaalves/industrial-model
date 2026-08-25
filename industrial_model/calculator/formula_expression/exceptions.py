@@ -1,9 +1,11 @@
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
+
+from ..exceptions import CalculatorError
 
 
-class FormulaError(Exception):
+class FormulaError(CalculatorError):
     """Base exception for formula errors."""
 
 
@@ -33,3 +35,26 @@ class ParameterLengthError(ParameterError):
             f"{name!r} has {length}" for name, length in self.lengths.items()
         )
         super().__init__(f"parameter length mismatch: {detail}")
+
+
+class MissingTimeAxisError(ParameterError):
+    """Raised when a query has only constants and so has no time axis."""
+
+    def __init__(self, aliases: Sequence[str]) -> None:
+        self.aliases = tuple(aliases)
+        joined = ", ".join(self.aliases)
+        super().__init__(
+            "query has no time-series parameter to define a time axis; "
+            f"only constant parameter(s): {joined}"
+        )
+
+
+class ParameterTimestampError(ParameterError):
+    """Raised when time-series parameters do not share the same timestamps."""
+
+    def __init__(self, aliases: Sequence[str]) -> None:
+        self.aliases = tuple(aliases)
+        joined = ", ".join(self.aliases)
+        super().__init__(
+            f"parameter timestamp mismatch: {joined} do not share the same timestamps"
+        )
