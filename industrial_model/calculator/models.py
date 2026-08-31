@@ -114,3 +114,4 @@ class CalculatorQuery(BaseModel):
 class CalculationResult(BaseModel):
     query: CalculatorQuery
     datapoints: list[DataPoint]
+    inputs: dict[str, list[DataPoint]] = Field(default_factory=dict)

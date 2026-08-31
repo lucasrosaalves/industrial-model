@@ -112,6 +112,18 @@ def _ms(moment: datetime) -> int:
     return int(moment.timestamp() * 1000)
 
 
+def _input_values(result: CalculationResult) -> dict[str, list[float]]:
+    return {
+        alias: [dp.value for dp in series] for alias, series in result.inputs.items()
+    }
+
+
+def _assert_inputs_share_result_timestamps(result: CalculationResult) -> None:
+    timestamps = [dp.timestamp for dp in result.datapoints]
+    for series in result.inputs.values():
+        assert [dp.timestamp for dp in series] == timestamps
+
+
 # ---------------------------------------------------------------------------
 # Calculator.calculate – shared helpers
 # ---------------------------------------------------------------------------
@@ -240,7 +252,7 @@ def test_calculate_returns_empty_result_when_data_missing_for_parameter() -> Non
     calc = Calculator(_client_returning(raw))
     query = _make_query("{A}", [param])
     result = calc.calculate(query, _START, _END)
-    assert result == CalculationResult(query=query, datapoints=[])
+    assert result == CalculationResult(query=query, datapoints=[], inputs={"A": []})
 
 
 # ---------------------------------------------------------------------------
@@ -500,7 +512,7 @@ def test_calculate_multi_instance_parameter_with_no_common_timestamps_is_empty()
     query = _make_query("{A}", [param])
     result = calc.calculate(query, _START, _END)
 
-    assert result == CalculationResult(query=query, datapoints=[])
+    assert result == CalculationResult(query=query, datapoints=[], inputs={"A": []})
 
 
 def test_calculate_timestamps_come_from_reduced_series_not_raw_leaf_series() -> None:
@@ -660,7 +672,9 @@ def test_calculate_intersect_with_no_overlap_is_empty() -> None:
         query, _START, _END
     )
 
-    assert result == CalculationResult(query=query, datapoints=[])
+    assert result == CalculationResult(
+        query=query, datapoints=[], inputs={"A": [], "B": []}
+    )
 
 
 def test_calculate_strict_alignment_raises_on_mismatched_series() -> None:
@@ -746,3 +760,113 @@ def test_calculate_multiples_multi_parameter_query() -> None:
 
     assert [dp.value for dp in results[0].datapoints] == [2.0, 2.0]
     assert [dp.value for dp in results[1].datapoints] == [3.0, 6.0]
+
+
+# ---------------------------------------------------------------------------
+# Calculator.calculate – inputs (aligned values used by the formula)
+# ---------------------------------------------------------------------------
+
+
+def test_calculate_inputs_are_the_series_passed_to_the_formula() -> None:
+    param = _make_param("A", external_id="ts1")
+    raw = _make_datapoints_list({("s", "ts1"): [1.0, 2.0, 3.0]})
+
+    calc = Calculator(_client_returning(raw))
+    result = calc.calculate(_make_query("{A} * 2", [param]), _START, _END)
+
+    assert _input_values(result) == {"A": [1.0, 2.0, 3.0]}
+    assert [dp.value for dp in result.datapoints] == [2.0, 4.0, 6.0]
+    _assert_inputs_share_result_timestamps(result)
+
+
+def test_calculate_inputs_include_every_parameter_at_aligned_indexes() -> None:
+    p_a = _make_param("A", external_id="ts_a")
+    p_b = _make_param("B", external_id="ts_b")
+    raw = _make_datapoints_list(
+        {("s", "ts_a"): [10.0, 20.0], ("s", "ts_b"): [2.0, 4.0]}
+    )
+    calc = Calculator(_client_returning(raw))
+
+    result = calc.calculate(_make_query("{A} / {B}", [p_a, p_b]), _START, _END)
+
+    assert _input_values(result) == {"A": [10.0, 20.0], "B": [2.0, 4.0]}
+    for i, dp in enumerate(result.datapoints):
+        assert dp.value == result.inputs["A"][i].value / result.inputs["B"][i].value
+    _assert_inputs_share_result_timestamps(result)
+
+
+def test_calculate_inputs_are_the_intersected_values_not_the_raw_series() -> None:
+    p_a = _make_param("A", external_id="ts_a")
+    p_b = _make_param("B", external_id="ts_b")
+    raw = _make_datapoints_list({("s", "ts_a"): [1.0, 2.0, 3.0], ("s", "ts_b"): [10.0]})
+    calc = Calculator(_client_returning(raw))
+
+    result = calc.calculate(_make_query("{A} + {B}", [p_a, p_b]), _START, _END)
+
+    # Only the shared timestamp survives alignment, so inputs drop A's extra points.
+    assert _input_values(result) == {"A": [1.0], "B": [10.0]}
+    assert [dp.value for dp in result.datapoints] == [11.0]
+    _assert_inputs_share_result_timestamps(result)
+
+
+def test_calculate_inputs_broadcast_constants_to_the_aligned_length() -> None:
+    ts_param = _make_param("A", external_id="ts_a")
+    const_param = ConstantParameter(alias="B", value=10.0)
+    raw = _make_datapoints_list({("s", "ts_a"): [1.0, 2.0, 3.0]})
+    calc = Calculator(_client_returning(raw))
+
+    result = calc.calculate(
+        _make_query("{A} + {B}", [ts_param, const_param]), _START, _END
+    )
+
+    assert _input_values(result) == {
+        "A": [1.0, 2.0, 3.0],
+        "B": [10.0, 10.0, 10.0],
+    }
+    _assert_inputs_share_result_timestamps(result)
+
+
+def test_calculate_inputs_use_the_reduced_series_for_multi_timeseries() -> None:
+    param = _make_multi_param(
+        "A",
+        [("s", "ts1"), ("s", "ts2")],
+        reducer="sum",
+        aggregate="average",
+        granularity="1h",
+    )
+    base = _ms(_START)
+    dp1 = _make_datapoints(
+        None, space="s", external_id="ts1", timestamps=[base, base + 60_000]
+    )
+    dp1.average = [1.0, 2.0]
+    dp2 = _make_datapoints(
+        None, space="s", external_id="ts2", timestamps=[base, base + 60_000]
+    )
+    dp2.average = [10.0, 20.0]
+
+    calc = Calculator(_client_returning([dp1, dp2]))
+    result = calc.calculate(_make_query("{A}", [param]), _START, _END)
+
+    assert _input_values(result) == {"A": [11.0, 22.0]}
+    assert [dp.value for dp in result.datapoints] == [11.0, 22.0]
+    _assert_inputs_share_result_timestamps(result)
+
+
+def test_calculate_multiples_inputs_are_scoped_to_each_query() -> None:
+    p_a = _make_param("A", external_id="ts_a")
+    p_b = _make_param("B", external_id="ts_b")
+    raw = _make_datapoints_list(
+        {("s", "ts_a"): [1.0, 2.0], ("s", "ts_b"): [10.0, 20.0]}
+    )
+    calc = Calculator(_client_returning(raw))
+
+    results = calc.calculate_multiples(
+        [_make_query("{A} * 2", [p_a]), _make_query("{B} + 1", [p_b])],
+        _START,
+        _END,
+    )
+
+    assert _input_values(results[0]) == {"A": [1.0, 2.0]}
+    assert _input_values(results[1]) == {"B": [10.0, 20.0]}
+    _assert_inputs_share_result_timestamps(results[0])
+    _assert_inputs_share_result_timestamps(results[1])
