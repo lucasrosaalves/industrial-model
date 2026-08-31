@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Iterable
 from datetime import datetime
 
 from cognite.client import CogniteClient
@@ -107,13 +108,26 @@ class Calculator:
                 values_map[parameter.alias] = [parameter.value] * len(timestamps)
 
         values = evaluate(query.formula, values_map)
+
+        inputs: dict[str, list[DataPoint]] = {
+            alias: _to_datapoints(series)
+            for alias, series in zip(ts_aliases, ts_series, strict=True)
+        }
+        for parameter in query.parameters:
+            if isinstance(parameter, ConstantParameter):
+                inputs[parameter.alias] = [
+                    DataPoint(timestamp=ts, value=parameter.value) for ts in timestamps
+                ]
+
         return CalculationResult(
             query=query,
-            datapoints=[
-                DataPoint(timestamp=ts, value=value)
-                for ts, value in zip(timestamps, values, strict=True)
-            ],
+            datapoints=_to_datapoints(zip(timestamps, values, strict=True)),
+            inputs=inputs,
         )
+
+
+def _to_datapoints(series: Iterable[tuple[datetime, float]]) -> list[DataPoint]:
+    return [DataPoint(timestamp=ts, value=value) for ts, value in series]
 
 
 def _align_series(

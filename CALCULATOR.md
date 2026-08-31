@@ -52,12 +52,14 @@ start = end - timedelta(days=1)
 result = calculator.calculate(query, start, end)
 # result.query:      CalculatorQuery  (the query that produced this result)
 # result.datapoints: list[DataPoint], each with .timestamp: datetime and .value: float
+# result.inputs:     dict[str, list[DataPoint]] — aligned series used by the formula, keyed by alias
+#                    result.inputs[alias][i] is the point used to compute result.datapoints[i]
 
 for dp in result.datapoints:
     print(dp.timestamp, dp.value)
 ```
 
-`result.query` is the exact `CalculatorQuery` that was passed in — handy when matching results back to their originating query after `calculate_multiples`.
+`result.query` is the exact `CalculatorQuery` that was passed in — handy when matching results back to their originating query after `calculate_multiples`. `result.inputs` is the aligned series that the formula actually evaluated: after retrieval, any `MultiTimeSeriesParameter` reduction, timestamp alignment, and constant broadcast. Each input series is a `list[DataPoint]` sharing the same timestamps as `datapoints`; `inputs[alias][i]` is the point used to compute `datapoints[i]`. These series are already in memory at evaluation time, so returning them does not refetch from CDF.
 
 Each `DataPoint.timestamp` comes from the **shared time axis** of the query's time-series parameters (`TimeSeriesParameter` or `MultiTimeSeriesParameter`). By default (`alignment="intersect"`) that axis is the **intersection** of their timestamps: a point is emitted only when every time-series parameter has a value at that exact timestamp. Set `alignment="strict"` to require identical timestamps and raise `ParameterTimestampError` if they differ. `ConstantParameter` values don't participate in this alignment — they are broadcast to the resulting length. See [Constants](#constants) and [Timestamp alignment](#timestamp-alignment) below.
 
@@ -106,8 +108,8 @@ from industrial_model.calculator import (
 | `ReducerType` | — | `Literal["min", "max", "sum", "average"]` | How multiple time series for one parameter are combined into one. |
 | `AlignmentMode` | — | `Literal["intersect", "strict"]` | How time-series parameters in a query are joined on time. Default is `"intersect"`. |
 | `CalculatorQuery` | — | `formula: str`, `parameters: list[CalculatorParameter]`, `alignment: AlignmentMode` (default `"intersect"`) | One query = one formula + the parameters it references. Every parameter's `alias` must be unique within the query — see below. `alignment` controls how time-series parameters are joined on time — see [Timestamp alignment](#timestamp-alignment). |
-| `DataPoint` | — | `timestamp: datetime`, `value: float` | A single evaluated point. |
-| `CalculationResult` | — | `query: CalculatorQuery`, `datapoints: list[DataPoint]` | Output of `Calculator.calculate`. `query` is the originating query; `datapoints` has one `DataPoint` per aligned index across the query's time-series parameters. |
+| `DataPoint` | — | `timestamp: datetime`, `value: float` | A timestamped numeric value. Used both for the formula result (`datapoints`) and for each aligned input series. |
+| `CalculationResult` | — | `query: CalculatorQuery`, `datapoints: list[DataPoint]`, `inputs: dict[str, list[DataPoint]]` | Output of `Calculator.calculate`. `query` is the originating query; `datapoints` has one `DataPoint` per aligned index; `inputs` is the aligned parameter series the formula evaluated (`inputs[alias][i]` was used to compute `datapoints[i]`). |
 
 In all three parameter kinds, `alias` is the name used inside `{...}` placeholders in the formula. `CalculatorQuery` rejects two parameters sharing the same `alias` at construction time:
 
