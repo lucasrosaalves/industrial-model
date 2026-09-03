@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+import time
 from collections.abc import Sequence
 from datetime import UTC, datetime
 from typing import cast
@@ -7,8 +9,11 @@ from typing import cast
 from cognite.client import CogniteClient
 from cognite.client.data_classes.datapoints import Datapoints, DatapointsQuery
 
+from ._timing import StageTimer, timed
 from .exceptions import DatapointsRetrievalError
 from .models import Series, TimeSeriesParameterBase
+
+logger = logging.getLogger(__name__)
 
 # Cognite's datapoints retrieve endpoint only accepts up to 100 time series
 # per request, so larger requests must be paginated client-side.
@@ -24,6 +29,7 @@ class DatapointsRetriever:
         parameters: Sequence[TimeSeriesParameterBase],
         start: datetime,
         end: datetime,
+        timer: StageTimer | None = None,
     ) -> list[list[Series]]:
         """Fetch datapoints for every parameter's time series, unreduced.
 
@@ -32,23 +38,56 @@ class DatapointsRetriever:
         parameter's series (when it references more than one) is the
         caller's responsibility - this class only retrieves and parses data.
         """
-        requests, index_mapping = self._build_requests(parameters, start, end)
+        with timed(timer, "build_requests"):
+            requests, index_mapping = self._build_requests(parameters, start, end)
+
+        n_chunks = (
+            (len(requests) + _MAX_TIME_SERIES_PER_REQUEST - 1)
+            // _MAX_TIME_SERIES_PER_REQUEST
+            if requests
+            else 0
+        )
+        if timer is not None:
+            timer.unique_timeseries = len(requests)
+            timer.cdf_chunks = n_chunks
+        log_debug = logger.isEnabledFor(logging.DEBUG)
+        if log_debug:
+            logger.debug(
+                "built %s unique timeseries request(s) for %s parameter(s)",
+                len(requests),
+                len(parameters),
+            )
 
         raw: list[Datapoints] = []
-        for i in range(0, len(requests), _MAX_TIME_SERIES_PER_REQUEST):
-            chunk = requests[i : i + _MAX_TIME_SERIES_PER_REQUEST]
-            response = self._client.time_series.data.retrieve(instance_id=chunk)
-            if len(response) != len(chunk):
-                raise DatapointsRetrievalError(
-                    f"expected {len(chunk)} datapoint series from CDF, "
-                    f"got {len(response)}"
-                )
-            raw.extend(response)
+        with timed(timer, "retrieve"):
+            for chunk_no, i in enumerate(
+                range(0, len(requests), _MAX_TIME_SERIES_PER_REQUEST), start=1
+            ):
+                chunk = requests[i : i + _MAX_TIME_SERIES_PER_REQUEST]
+                started = time.perf_counter() if log_debug else None
+                response = self._client.time_series.data.retrieve(instance_id=chunk)
+                if started is not None:
+                    logger.debug(
+                        "retrieve chunk %s/%s: %s series in %.3fs",
+                        chunk_no,
+                        n_chunks,
+                        len(chunk),
+                        time.perf_counter() - started,
+                    )
+                if len(response) != len(chunk):
+                    raise DatapointsRetrievalError(
+                        f"expected {len(chunk)} datapoint series from CDF, "
+                        f"got {len(response)}"
+                    )
+                raw.extend(response)
 
-        return [
-            [self._parse_datapoints(raw[idx], parameter) for idx in raw_indices]
-            for parameter, raw_indices in zip(parameters, index_mapping, strict=True)
-        ]
+        with timed(timer, "parse"):
+            return [
+                [self._parse_datapoints(raw[idx], parameter) for idx in raw_indices]
+                for parameter, raw_indices in zip(
+                    parameters, index_mapping, strict=True
+                )
+            ]
 
     def _build_requests(
         self,

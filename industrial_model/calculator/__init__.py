@@ -1,3 +1,5 @@
+import logging
+
 from .calculator import Calculator
 from .exceptions import CalculatorError
 from .formula_expression import evaluate
@@ -27,3 +29,6 @@ __all__ = [
     "TimeSeriesParameter",
     "evaluate",
 ]
+
+# Library logging: no handlers of our own. Applications configure this logger.
+logging.getLogger(__name__).addHandler(logging.NullHandler())

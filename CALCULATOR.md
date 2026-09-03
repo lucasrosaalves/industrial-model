@@ -79,6 +79,19 @@ results = calculator.calculate_multiples(
 # results[0], results[1] -> CalculationResult, one per input query, same order
 ```
 
+### Debug logs
+
+The calculator uses the standard library `logging` module and is silent by default. Set the `industrial_model.calculator` logger to `DEBUG` to see where a run spends time:
+
+```python
+import logging
+
+logging.basicConfig()
+logging.getLogger("industrial_model.calculator").setLevel(logging.DEBUG)
+```
+
+Each `calculate` / `calculate_multiples` call then logs a single-line stage breakdown (`build_requests`, `retrieve`, `parse`, `reduce`, `align`, `evaluate`, `assemble`) and names the bottleneck — the exclusive stage that took the longest. The summary is emitted even if the call fails (`status=error`). CDF retrieve is shared across all queries in a `calculate_multiples` batch, so it appears once in the summary. DEBUG also logs each CDF chunk and each query's formula, input lengths, and aligned point count.
+
 ---
 
 ## Data models
@@ -555,6 +568,7 @@ result = calculator.calculate(query, start, end)
 | File | Responsibility |
 |---|---|
 | `calculator.py` | `Calculator` — orchestrates retrieval + evaluation for one or many queries. Splits `ConstantParameter`s (broadcast, never fetched) from time-series parameters (fetched via `DatapointsRetriever`), uses `SeriesReducer` to collapse a `MultiTimeSeriesParameter`'s series, then aligns remaining time-series parameters (`intersect` by default, or `strict`). |
+| `_timing.py` | `StageTimer` — exclusive wall-clock timings for DEBUG stage summaries. No-op when the calculator logger is not at DEBUG. |
 | `datapoints_retrieval.py` | `DatapointsRetriever` — fetching only: builds deduplicated `DatapointsQuery` requests per unique (time series, aggregate, granularity) and parses CDF responses into `(timestamp, value)` pairs (dropping `None` values). Returns one *unreduced* series per instance id — combining them is the caller's job. |
 | `series_reducer.py` | `SeriesReducer` — timestamp intersection via a sorted k-way merge. `reduce` combines several series into one with `min`/`max`/`sum`/`average`; `align` filters several series onto their common timestamps. Both normalize every input first (sort by timestamp, collapse duplicate timestamps to their last value), including the single-series case, so output never depends on how many series were passed. Used by `Calculator` for `MultiTimeSeriesParameter` and for formula-level `intersect` alignment. |
 | `models.py` | Pydantic models: `CalculatorParameter` (discriminated union), `ConstantParameter`, `TimeSeriesParameter`, `MultiTimeSeriesParameter`, `TimeSeriesParameterBase` (shared fields, not itself part of the union), `ReducerType`, `AlignmentMode`, `Series` (the `list[(timestamp, value)]` alias used throughout), `CalculatorQuery` (validates unique parameter aliases), `CalculationResult`, `DataPoint`. |
