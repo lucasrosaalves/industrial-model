@@ -5,6 +5,8 @@ import operator
 from collections.abc import Callable
 from typing import TypeAlias
 
+from ._functions import ALLOWED_FUNCTIONS, FunctionSpec
+
 _UNARY_OPS: dict[type[ast.unaryop], Callable[[float], float]] = {
     ast.UAdd: operator.pos,
     ast.USub: operator.neg,
@@ -91,6 +93,9 @@ def _evaluate_node(node: ast.AST, environment: dict[str, tuple[float, ...]]) -> 
             return tuple(op(value) for value in operand)
         return op(operand)
 
+    if isinstance(node, ast.Call):
+        return _evaluate_call(node, environment)
+
     msg = f"unsupported formula element: {type(node).__name__}"
     raise TypeError(msg)
 
@@ -149,8 +154,55 @@ def _evaluate_node_at(
         branch = node.body if test else node.orelse
         return _evaluate_node_at(branch, environment, index)
 
+    if isinstance(node, ast.Call):
+        return _evaluate_call_at(node, environment, index)
+
     msg = f"unsupported formula element: {type(node).__name__}"
     raise TypeError(msg)
+
+
+def _evaluate_call(node: ast.Call, environment: dict[str, tuple[float, ...]]) -> Value:
+    spec, window = _call_spec_and_window(node, environment)
+    series = _evaluate_node(node.args[0], environment)
+    if isinstance(series, float):
+        return series
+    return spec.apply(series, window)
+
+
+def _evaluate_call_at(
+    node: ast.Call, environment: dict[str, tuple[float, ...]], index: int
+) -> float:
+    spec, window = _call_spec_and_window_at(node, environment, index)
+    start = max(0, index - window + 1)
+    values = tuple(
+        _evaluate_node_at(node.args[0], environment, neighbor)
+        for neighbor in range(start, index + 1)
+    )
+    return spec.apply(values, window)[-1]
+
+
+def _call_spec_and_window(
+    node: ast.Call, environment: dict[str, tuple[float, ...]]
+) -> tuple[FunctionSpec, int]:
+    spec, window_node = _call_spec(node)
+    window_value = _evaluate_node(window_node, environment)
+    assert isinstance(window_value, float)
+    return spec, int(window_value)
+
+
+def _call_spec_and_window_at(
+    node: ast.Call, environment: dict[str, tuple[float, ...]], index: int
+) -> tuple[FunctionSpec, int]:
+    spec, window_node = _call_spec(node)
+    window_value = _evaluate_node_at(window_node, environment, index)
+    return spec, int(window_value)
+
+
+def _call_spec(node: ast.Call) -> tuple[FunctionSpec, ast.expr]:
+    assert isinstance(node.func, ast.Name)
+    spec = ALLOWED_FUNCTIONS[node.func.id]
+    assert spec.window_arg is not None
+    return spec, node.args[spec.window_arg]
 
 
 def _apply_binary(

@@ -124,3 +124,34 @@ def test_compiler_flags_formulas_with_bool_ops() -> None:
 def test_compiler_does_not_flag_plain_arithmetic_as_conditional() -> None:
     compiled = compile_formula("{A} + {B}")
     assert compiled.has_conditional is False
+
+
+def test_compiler_parses_rolling_average_as_call() -> None:
+    compiled = compile_formula("rolling_average({A}, 3)")
+
+    assert isinstance(compiled.tree.body, ast.Call)
+    assert compiled.has_conditional is False
+    assert compiled.variables == ("A",)
+
+
+def test_compiler_folds_rolling_average_window_expression() -> None:
+    compiled = compile_formula("rolling_average({A}, 2 + 2)")
+
+    call = compiled.tree.body
+    assert isinstance(call, ast.Call)
+    assert isinstance(call.args[1], ast.Constant)
+    assert call.args[1].value == 4
+
+
+def test_compiler_folds_near_integer_window_to_exact_integer() -> None:
+    compiled = compile_formula("rolling_average({A}, 8.3 - 5.3)")
+
+    call = compiled.tree.body
+    assert isinstance(call, ast.Call)
+    assert isinstance(call.args[1], ast.Constant)
+    assert call.args[1].value == 3
+
+
+def test_compiler_flags_rolling_average_of_ternary_as_conditional() -> None:
+    compiled = compile_formula("rolling_average({A} / {B} if {B} != 0 else 0, 3)")
+    assert compiled.has_conditional is True
