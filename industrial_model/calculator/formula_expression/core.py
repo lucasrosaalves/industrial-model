@@ -41,7 +41,9 @@ def evaluate(
     positive integer constant. Incomplete windows at the start of a series
     average whatever points exist so far, so the result stays aligned with
     the inputs. Put value-dependent guards *inside* the series argument: an
-    outer ``if`` around the call does not protect other indexes in the window.
+    outer ``if`` does not protect neighbors in the window of a selected
+    index. A call that is never selected, and indexes that are not in any
+    selected window, are not evaluated.
     """
 
     values = dict(parameters or {})

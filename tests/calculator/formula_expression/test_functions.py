@@ -121,6 +121,14 @@ def test_rolling_average_does_not_run_when_the_call_is_never_selected() -> None:
     assert_values_equal(result, [0.0, 0.0])
 
 
+def test_rolling_average_does_not_evaluate_indexes_outside_a_selected_window() -> None:
+    result = evaluate(
+        "rolling_average({A} / {B}, 2) if {C} > 0 else 0",
+        {"A": [10.0, 20.0], "B": [5.0, 0.0], "C": [1.0, 0.0]},
+    )
+    assert_values_equal(result, [2.0, 0.0])
+
+
 def test_outer_guard_does_not_protect_neighbors_inside_the_window() -> None:
     with pytest.raises(ZeroDivisionError):
         evaluate(

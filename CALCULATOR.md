@@ -324,7 +324,7 @@ This is not a CDF bucket aggregate (`aggregate_type="average"` + `granularity`) 
 
 `Calculator` still fetches `[start, end]` only. The first `N - 1` points in the result are a warmup; pass an earlier `start` if you need a full window at the beginning of the range you care about. Unknown function names, keyword arguments, starred arguments, and a non-constant or non-positive window still raise `InvalidFormulaError`.
 
-A ternary (or `and`/`or`) around the **call** does not protect values inside the window. Once an element selects `rolling_average(...)`, the series argument is evaluated at every index in that element's window — so an unguarded `{A} / {B}` still raises if a neighbor's `B` is 0. Put the guard **inside** the series argument. A call that is never selected does not run.
+A ternary (or `and`/`or`) around the **call** does not protect neighbors in the window of a selected index. Put the guard **inside** the series argument. A call that is never selected does not run. Indexes that do not select the call, and are not in a selected window, are not evaluated.
 
 ```python
 evaluate(
@@ -334,11 +334,16 @@ evaluate(
 # -> (5.0, 2.5, 3.0)   # the zero is replaced before the window sees it
 
 evaluate(
+    "rolling_average({A} / {B}, 2) if {C} > 0 else 0",
+    {"A": [10.0, 20.0], "B": [5.0, 0.0], "C": [1.0, 0.0]},
+)
+# -> (2.0, 0.0)   # index 0's window is only [0]; index 1 never selects the call
+
+evaluate(
     "rolling_average({A} / {B}, 2) if {B} != 0 else 0",
     {"A": [10.0, 20.0, 30.0], "B": [2.0, 0.0, 5.0]},
 )
-# raises ZeroDivisionError — at the index where B is 5, the window
-# looks back at B == 0
+# raises ZeroDivisionError — index 2 selects the call; window [1, 2] includes B == 0
 
 evaluate(
     "rolling_average({A} / {B}, 2) if {C} > 0 else 0",
