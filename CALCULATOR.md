@@ -277,7 +277,7 @@ def evaluate(
 
 ### Formula syntax
 
-Formulas are plain text with `{NAME}` placeholders substituted by parameter series. Supported grammar (a strict, safe subset of Python expressions — parsed via `ast` and validated against an explicit allow-list, so nothing outside this list, including function calls, attribute access, subscripting, or comprehensions, is accepted):
+Formulas are plain text with `{NAME}` placeholders substituted by parameter series. Supported grammar (a strict, safe subset of Python expressions — parsed via `ast` and validated against an explicit allow-list, so nothing outside this list, including unknown function calls, attribute access, subscripting, or comprehensions, is accepted):
 
 | Category | Supported |
 |---|---|
@@ -286,6 +286,7 @@ Formulas are plain text with `{NAME}` placeholders substituted by parameter seri
 | Comparisons | `==`  `!=`  `<`  `<=`  `>`  `>=` (chainable, e.g. `0 <= {A} < 100`) |
 | Boolean | `and`, `or` |
 | Conditional | ternary `X if COND else Y` |
+| Functions | `rolling_average(series, N)` — simple moving average of the last `N` aligned points; see [Rolling average](#rolling-average) |
 | Constants | numeric literals only: `42`, `3.14`, `1e-3`. No strings, booleans, `None`, lists, etc. |
 
 Whitespace (including newlines/tabs) is normalized before parsing, so multi-line formulas are fine.
@@ -301,6 +302,27 @@ Whitespace (including newlines/tabs) is normalized before parsing, so multi-line
 - If every referenced parameter is an empty sequence, the result is `()` — not an error.
 - Value-dependent arithmetic failures (division/modulo by zero, exponent overflow) are raised as native `ZeroDivisionError` / `OverflowError`, **not** wrapped — only structural problems raise `FormulaError` subclasses.
 - Compiled formulas are cached (`lru_cache`, keyed on normalized text) and constant-only subtrees (e.g. `24 * 3600`) are folded once at compile time, so repeated evaluation of the same formula string is cheap.
+
+### Rolling average
+
+`rolling_average(series, N)` is a simple moving average over the last `N` aligned points. It is **count-based**, not time-based: `N` is a positive integer constant (literals and folded expressions like `12 * 2` or `6 / 2` are fine; a parameter `{WINDOW}` is not). The series argument can be any numeric sub-expression.
+
+The result is **the same length as the inputs**. At the start of a series there are fewer than `N` points, so those indexes average whatever exists so far (index 0 is itself; the true `N`-point average starts at index `N - 1`). There are no NaNs and no dropped timestamps, so `inputs[alias][i]` still corresponds to `datapoints[i]`.
+
+```python
+evaluate("rolling_average({A}, 3)", {"A": [10.0, 20.0, 30.0, 40.0]})
+# -> (10.0, 15.0, 20.0, 30.0)
+
+evaluate(
+    "rolling_average({A}, 3) - {B}",
+    {"A": [10.0, 20.0, 30.0, 40.0], "B": [1.0, 2.0, 3.0, 4.0]},
+)
+# -> (9.0, 13.0, 17.0, 26.0)
+```
+
+This is not a CDF bucket aggregate (`aggregate_type="average"` + `granularity`) and not time-weighted. Hourly aggregates plus `rolling_average({TEMP}, 24)` is the 24-hour moving average of hourly values. For raw irregular points it is “last N aligned samples.”
+
+`Calculator` still fetches `[start, end]` only. The first `N - 1` points in the result are a warmup; pass an earlier `start` if you need a full window at the beginning of the range you care about. Unknown function names, keyword arguments, and a non-constant or non-positive window still raise `InvalidFormulaError`.
 
 ### Errors
 
@@ -324,7 +346,7 @@ The structural formula errors:
 
 | Exception | Raised when |
 |---|---|
-| `InvalidFormulaError` | Empty formula, invalid/unresolved placeholder syntax, invalid Python syntax, or an unsupported AST node/identifier/constant type (e.g. calling a function, using a string literal). |
+| `InvalidFormulaError` | Empty formula, invalid/unresolved placeholder syntax, invalid Python syntax, or an unsupported AST node/identifier/constant type (e.g. calling an unknown function, using a string literal). |
 | `MissingParameterError` | The formula references a placeholder with no matching entry in `parameters`/`kwargs`. |
 | `ParameterError` | A supplied parameter value isn't a numeric sequence (e.g. a string, or a sequence containing non-numeric/boolean items). |
 | `ParameterLengthError` | Two or more referenced parameters have different lengths (and not all are empty). Direct `evaluate()` calls raise this; `Calculator` aligns on timestamps before calling `evaluate`. |
@@ -412,6 +434,21 @@ evaluate(
 # -> (86215.0, 86080.0)
 ```
 
+### Rolling average of hourly temperature vs setpoint
+
+```python
+evaluate(
+    "rolling_average({TEMP}, 24) - {SETPOINT}",
+    {
+        "TEMP": [100.0, 110.0, 120.0, 130.0],
+        "SETPOINT": [105.0, 105.0, 110.0, 115.0],
+    },
+)
+# -> (-5.0, 0.0, 0.0, 0.0)
+# rolling_average(TEMP, 24) with only 4 points is the expanding mean:
+# (100.0, 105.0, 110.0, 115.0)
+```
+
 ### End-to-end with `Calculator`, aggregates, and multiple queries
 
 ```python
@@ -497,7 +534,8 @@ result = calculator.calculate(query, start, end)
 | `models.py` | Pydantic models: `CalculatorParameter` (discriminated union), `ConstantParameter`, `TimeSeriesParameter`, `MultiTimeSeriesParameter`, `TimeSeriesParameterBase` (shared fields, not itself part of the union), `ReducerType`, `AlignmentMode`, `Series` (the `list[(timestamp, value)]` alias used throughout), `CalculatorQuery` (validates unique parameter aliases), `CalculationResult`, `DataPoint`. |
 | `exceptions.py` | `CalculatorError`, the root every other exception in the package derives from, and `DatapointsRetrievalError` for unusable CDF responses. |
 | `formula_expression/core.py` | Public `evaluate()` entry point; merges positional mapping + kwargs. |
-| `formula_expression/_compiler.py` | Text normalization, placeholder substitution, AST allow-list validation, constant folding, `lru_cache`-based compile caching. |
-| `formula_expression/_evaluator.py` | AST walker: vectorized evaluation for pure-arithmetic trees, index-by-index short-circuiting evaluation for conditional/boolean/comparison trees. |
+| `formula_expression/_compiler.py` | Text normalization, placeholder substitution, AST allow-list validation (including allow-listed `Call`s), constant folding, `lru_cache`-based compile caching. |
+| `formula_expression/_functions.py` | Allow-listed formula functions: name, arity, and implementation. Currently `rolling_average` (same-length simple moving average with a partial prefix). |
+| `formula_expression/_evaluator.py` | AST walker: vectorized evaluation for pure-arithmetic trees (including function calls), index-by-index short-circuiting evaluation for conditional/boolean/comparison trees. |
 | `formula_expression/_runtime.py` | Binds compiled formulas to concrete parameter values: parameter presence/type/length validation, then delegates to the evaluator. |
 | `formula_expression/exceptions.py` | `FormulaError` (a `CalculatorError`) and its subclasses, including the two errors `Calculator` itself raises: `ParameterTimestampError` (`alignment` is `strict` and time-series parameters don't share timestamps) and `MissingTimeAxisError` (the query has no time-series parameter). |

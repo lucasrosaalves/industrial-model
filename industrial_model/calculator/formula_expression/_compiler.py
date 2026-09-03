@@ -9,6 +9,7 @@ from functools import lru_cache
 from typing import cast
 
 from ._evaluator import _BINARY_OPS, _UNARY_OPS
+from ._functions import ALLOWED_FUNCTIONS
 from .exceptions import InvalidFormulaError
 
 _PLACEHOLDER_RE = re.compile(r"\{([A-Za-z_][A-Za-z0-9_]*)\}")
@@ -25,6 +26,7 @@ _ALLOWED_AST_NODES = (
     ast.IfExp,
     ast.Compare,
     ast.BoolOp,
+    ast.Call,
 )
 _ALLOWED_OPERATORS = (
     ast.Add,
@@ -86,6 +88,7 @@ def _compile_normalized(raw: str) -> CompiledFormula:
         isinstance(node, _CONDITIONAL_NODES) for node in ast.walk(tree)
     )
     tree = ast.Expression(body=_fold_constants(tree.body))
+    _validate_folded_function_args(tree)
     return CompiledFormula(
         raw=raw,
         expression=expression,
@@ -136,7 +139,12 @@ def _replace_placeholders(
 
 
 def _validate_tree(tree: ast.Expression, allowed_names: set[str]) -> None:
+    function_name_nodes: set[int] = set()
     for node in ast.walk(tree):
+        if isinstance(node, ast.Call):
+            _validate_call_shape(node)
+            function_name_nodes.add(id(node.func))
+
         if not isinstance(
             node,
             _ALLOWED_AST_NODES
@@ -148,13 +156,64 @@ def _validate_tree(tree: ast.Expression, allowed_names: set[str]) -> None:
                 f"unsupported formula element: {type(node).__name__}"
             )
 
-        if isinstance(node, ast.Name) and node.id not in allowed_names:
+        if (
+            isinstance(node, ast.Name)
+            and id(node) not in function_name_nodes
+            and node.id not in allowed_names
+        ):
             raise InvalidFormulaError(f"unknown formula identifier: {node.id}")
 
         if isinstance(node, ast.Constant) and (
             isinstance(node.value, bool) or not isinstance(node.value, (int, float))
         ):
             raise InvalidFormulaError("only numeric constants are supported")
+
+
+def _validate_call_shape(node: ast.Call) -> None:
+    if not isinstance(node.func, ast.Name):
+        raise InvalidFormulaError(
+            f"unsupported formula element: {type(node.func).__name__}"
+        )
+
+    spec = ALLOWED_FUNCTIONS.get(node.func.id)
+    if spec is None:
+        if node.func.id.startswith(_SAFE_NAME_PREFIX):
+            raise InvalidFormulaError("unsupported formula element: Call")
+        raise InvalidFormulaError(f"unknown formula function: {node.func.id}")
+
+    if node.keywords:
+        raise InvalidFormulaError(f"{node.func.id}() does not accept keyword arguments")
+    if any(isinstance(arg, ast.Starred) for arg in node.args):
+        raise InvalidFormulaError(f"{node.func.id}() does not accept starred arguments")
+    if len(node.args) != spec.arity:
+        raise InvalidFormulaError(
+            f"{node.func.id}() takes {spec.arity} arguments, got {len(node.args)}"
+        )
+
+
+def _validate_folded_function_args(tree: ast.Expression) -> None:
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Name):
+            continue
+        spec = ALLOWED_FUNCTIONS.get(node.func.id)
+        if spec is None or spec.window_arg is None:
+            continue
+        window_node = node.args[spec.window_arg]
+        if not isinstance(window_node, ast.Constant):
+            raise InvalidFormulaError(
+                f"{node.func.id}() window must be a numeric constant"
+            )
+        if not _is_positive_int_window(window_node.value):
+            raise InvalidFormulaError(
+                f"{node.func.id}() window must be a positive integer"
+            )
+
+
+def _is_positive_int_window(value: object) -> bool:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return False
+    as_int = int(value)
+    return value == as_int and as_int >= 1
 
 
 def _fold_constants(node: ast.expr) -> ast.expr:
@@ -206,6 +265,10 @@ def _fold_constants(node: ast.expr) -> ast.expr:
 
     if isinstance(node, ast.BoolOp):
         node.values = [_fold_constants(v) for v in node.values]
+        return node
+
+    if isinstance(node, ast.Call):
+        node.args = [_fold_constants(arg) for arg in node.args]
         return node
 
     return node

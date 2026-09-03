@@ -196,6 +196,40 @@ def test_calculate_returns_evaluation_result_for_simple_formula() -> None:
     assert [dp.value for dp in result.datapoints] == [2.0, 4.0, 6.0]
 
 
+def test_calculate_rolling_average_keeps_input_alignment() -> None:
+    param = _make_param("A", external_id="ts1")
+    raw = _make_datapoints_list({("s", "ts1"): [10.0, 20.0, 30.0, 40.0]})
+
+    calc = Calculator(_client_returning(raw))
+    result = calc.calculate(
+        _make_query("rolling_average({A}, 3)", [param]), _START, _END
+    )
+
+    assert [dp.value for dp in result.datapoints] == [10.0, 15.0, 20.0, 30.0]
+    assert _input_values(result) == {"A": [10.0, 20.0, 30.0, 40.0]}
+    _assert_inputs_share_result_timestamps(result)
+
+
+def test_calculate_rolling_average_minus_second_series_stays_aligned() -> None:
+    p_a = _make_param("A", external_id="ts_a")
+    p_b = _make_param("B", external_id="ts_b")
+    raw = _make_datapoints_list(
+        {("s", "ts_a"): [10.0, 20.0, 30.0, 40.0], ("s", "ts_b"): [1.0, 2.0, 3.0, 4.0]}
+    )
+
+    calc = Calculator(_client_returning(raw))
+    result = calc.calculate(
+        _make_query("rolling_average({A}, 3) - {B}", [p_a, p_b]), _START, _END
+    )
+
+    assert [dp.value for dp in result.datapoints] == [9.0, 13.0, 17.0, 26.0]
+    assert _input_values(result) == {
+        "A": [10.0, 20.0, 30.0, 40.0],
+        "B": [1.0, 2.0, 3.0, 4.0],
+    }
+    _assert_inputs_share_result_timestamps(result)
+
+
 def test_calculate_passes_window_to_client() -> None:
     param = _make_param("A")
     raw = _make_datapoints_list({("s", "x"): [5.0]})

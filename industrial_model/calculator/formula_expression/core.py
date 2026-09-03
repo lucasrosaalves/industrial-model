@@ -35,6 +35,12 @@ def evaluate(
     each series element, only the selected branch is evaluated, so a
     division-by-zero (or other value-dependent failure) in the branch that is
     *not* selected for a given element never raises.
+
+    Allow-listed functions (currently ``rolling_average({A}, N)``) are
+    evaluated as same-length series transforms. The window ``N`` must be a
+    positive integer constant. Incomplete windows at the start of a series
+    average whatever points exist so far, so the result stays aligned with
+    the inputs.
     """
 
     values = dict(parameters or {})
