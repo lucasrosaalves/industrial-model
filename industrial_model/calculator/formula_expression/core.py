@@ -40,7 +40,8 @@ def evaluate(
     evaluated as same-length series transforms. The window ``N`` must be a
     positive integer constant. Incomplete windows at the start of a series
     average whatever points exist so far, so the result stays aligned with
-    the inputs.
+    the inputs. Put value-dependent guards *inside* the series argument: an
+    outer ``if`` around the call does not protect other indexes in the window.
     """
 
     values = dict(parameters or {})

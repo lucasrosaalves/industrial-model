@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import ast
 import functools
+import math
 import re
+import sys
 from collections.abc import Mapping
 from dataclasses import dataclass
 from functools import lru_cache
@@ -203,17 +205,33 @@ def _validate_folded_function_args(tree: ast.Expression) -> None:
             raise InvalidFormulaError(
                 f"{node.func.id}() window must be a numeric constant"
             )
-        if not _is_positive_int_window(window_node.value):
+        if _to_positive_int_window(window_node.value) is None:
             raise InvalidFormulaError(
                 f"{node.func.id}() window must be a positive integer"
             )
 
 
-def _is_positive_int_window(value: object) -> bool:
+def _to_positive_int_window(value: object) -> int | None:
+    """Return ``N`` when ``value`` is a positive integer, including float noise.
+
+    Folded expressions such as ``8.3 - 5.3`` are not always exact integers
+    (they land a few ULPs away). Accept those and reject true non-integers
+    such as ``1.5``.
+    """
+
     if isinstance(value, bool) or not isinstance(value, (int, float)):
-        return False
-    as_int = int(value)
-    return value == as_int and as_int >= 1
+        return None
+    if isinstance(value, int):
+        return value if value >= 1 else None
+    if not math.isfinite(value) or value < 1:
+        return None
+    rounded = round(value)
+    if rounded < 1:
+        return None
+    tolerance = sys.float_info.epsilon * max(1.0, abs(value)) * 16
+    if abs(value - rounded) <= tolerance:
+        return int(rounded)
+    return None
 
 
 def _fold_constants(node: ast.expr) -> ast.expr:
@@ -269,6 +287,29 @@ def _fold_constants(node: ast.expr) -> ast.expr:
 
     if isinstance(node, ast.Call):
         node.args = [_fold_constants(arg) for arg in node.args]
-        return node
+        return _fold_call_window_arg(node)
 
+    return node
+
+
+def _fold_call_window_arg(node: ast.Call) -> ast.Call:
+    """Rewrite a near-integer folded window to an exact int.
+
+    Keeps later evaluation from depending on ``int(2.999…)`` truncating.
+    """
+
+    if not isinstance(node.func, ast.Name):
+        return node
+    spec = ALLOWED_FUNCTIONS.get(node.func.id)
+    if spec is None or spec.window_arg is None:
+        return node
+    window_node = node.args[spec.window_arg]
+    if not isinstance(window_node, ast.Constant):
+        return node
+    integer = _to_positive_int_window(window_node.value)
+    if integer is None or integer == window_node.value:
+        return node
+    node.args[spec.window_arg] = ast.copy_location(
+        ast.Constant(value=integer), window_node
+    )
     return node

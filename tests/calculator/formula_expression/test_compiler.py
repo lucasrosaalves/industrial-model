@@ -143,6 +143,15 @@ def test_compiler_folds_rolling_average_window_expression() -> None:
     assert call.args[1].value == 4
 
 
+def test_compiler_folds_near_integer_window_to_exact_integer() -> None:
+    compiled = compile_formula("rolling_average({A}, 8.3 - 5.3)")
+
+    call = compiled.tree.body
+    assert isinstance(call, ast.Call)
+    assert isinstance(call.args[1], ast.Constant)
+    assert call.args[1].value == 3
+
+
 def test_compiler_flags_rolling_average_of_ternary_as_conditional() -> None:
     compiled = compile_formula("rolling_average({A} / {B} if {B} != 0 else 0, 3)")
     assert compiled.has_conditional is True

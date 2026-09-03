@@ -322,7 +322,43 @@ evaluate(
 
 This is not a CDF bucket aggregate (`aggregate_type="average"` + `granularity`) and not time-weighted. Hourly aggregates plus `rolling_average({TEMP}, 24)` is the 24-hour moving average of hourly values. For raw irregular points it is “last N aligned samples.”
 
-`Calculator` still fetches `[start, end]` only. The first `N - 1` points in the result are a warmup; pass an earlier `start` if you need a full window at the beginning of the range you care about. Unknown function names, keyword arguments, and a non-constant or non-positive window still raise `InvalidFormulaError`.
+`Calculator` still fetches `[start, end]` only. The first `N - 1` points in the result are a warmup; pass an earlier `start` if you need a full window at the beginning of the range you care about. Unknown function names, keyword arguments, starred arguments, and a non-constant or non-positive window still raise `InvalidFormulaError`.
+
+A ternary (or `and`/`or`) around the **call** does not protect values inside the window. Once an element selects `rolling_average(...)`, the series argument is evaluated at every index in that element's window — so an unguarded `{A} / {B}` still raises if a neighbor's `B` is 0. Put the guard **inside** the series argument. A call that is never selected does not run.
+
+```python
+evaluate(
+    "rolling_average({A} / {B} if {B} != 0 else 0, 2)",
+    {"A": [10.0, 20.0, 30.0], "B": [2.0, 0.0, 5.0]},
+)
+# -> (5.0, 2.5, 3.0)   # the zero is replaced before the window sees it
+
+evaluate(
+    "rolling_average({A} / {B}, 2) if {B} != 0 else 0",
+    {"A": [10.0, 20.0, 30.0], "B": [2.0, 0.0, 5.0]},
+)
+# raises ZeroDivisionError — at the index where B is 5, the window
+# looks back at B == 0
+
+evaluate(
+    "rolling_average({A} / {B}, 2) if {C} > 0 else 0",
+    {"A": [10.0, 20.0], "B": [0.0, 0.0], "C": [0.0, 0.0]},
+)
+# -> (0.0, 0.0)   # the call is never selected
+```
+
+```python
+evaluate(
+    "rolling_average({TEMP}, 24) - {SETPOINT}",
+    {
+        "TEMP": [100.0, 110.0, 120.0, 130.0],
+        "SETPOINT": [105.0, 105.0, 110.0, 115.0],
+    },
+)
+# -> (-5.0, 0.0, 0.0, 0.0)
+# rolling_average(TEMP, 24) with only 4 points is the expanding mean:
+# (100.0, 105.0, 110.0, 115.0)
+```
 
 ### Errors
 
@@ -346,7 +382,7 @@ The structural formula errors:
 
 | Exception | Raised when |
 |---|---|
-| `InvalidFormulaError` | Empty formula, invalid/unresolved placeholder syntax, invalid Python syntax, or an unsupported AST node/identifier/constant type (e.g. calling an unknown function, using a string literal). |
+| `InvalidFormulaError` | Empty formula, invalid/unresolved placeholder syntax, invalid Python syntax, or an unsupported AST node/identifier/constant type (e.g. calling an unknown function, using a string literal, or a non-constant / non-positive `rolling_average` window). |
 | `MissingParameterError` | The formula references a placeholder with no matching entry in `parameters`/`kwargs`. |
 | `ParameterError` | A supplied parameter value isn't a numeric sequence (e.g. a string, or a sequence containing non-numeric/boolean items). |
 | `ParameterLengthError` | Two or more referenced parameters have different lengths (and not all are empty). Direct `evaluate()` calls raise this; `Calculator` aligns on timestamps before calling `evaluate`. |
@@ -432,21 +468,6 @@ evaluate(
     },
 )
 # -> (86215.0, 86080.0)
-```
-
-### Rolling average of hourly temperature vs setpoint
-
-```python
-evaluate(
-    "rolling_average({TEMP}, 24) - {SETPOINT}",
-    {
-        "TEMP": [100.0, 110.0, 120.0, 130.0],
-        "SETPOINT": [105.0, 105.0, 110.0, 115.0],
-    },
-)
-# -> (-5.0, 0.0, 0.0, 0.0)
-# rolling_average(TEMP, 24) with only 4 points is the expanding mean:
-# (100.0, 105.0, 110.0, 115.0)
 ```
 
 ### End-to-end with `Calculator`, aggregates, and multiple queries

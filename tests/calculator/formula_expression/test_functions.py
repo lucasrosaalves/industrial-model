@@ -97,6 +97,38 @@ def test_rolling_average_inside_ternary_uses_neighbors_for_the_window() -> None:
     assert_values_equal(result, [10.0, 0.0, 25.0])
 
 
+def test_nested_rolling_average_on_element_wise_path_matches_vectorized() -> None:
+    result = evaluate(
+        "rolling_average(rolling_average({A}, 2), 2) if {B} > 0 else 0",
+        {"A": [10.0, 20.0, 30.0, 40.0], "B": [1.0, 1.0, 1.0, 1.0]},
+    )
+    assert_values_equal(result, [10.0, 12.5, 20.0, 30.0])
+
+
+def test_rolling_average_stays_aligned_when_ternary_is_elsewhere() -> None:
+    result = evaluate(
+        "rolling_average({A}, 3) + ({B} if {B} > 0 else 0)",
+        {"A": [10.0, 20.0, 30.0, 40.0], "B": [1.0, 0.0, 1.0, 1.0]},
+    )
+    assert_values_equal(result, [11.0, 15.0, 21.0, 31.0])
+
+
+def test_rolling_average_does_not_run_when_the_call_is_never_selected() -> None:
+    result = evaluate(
+        "rolling_average({A} / {B}, 2) if {C} > 0 else 0",
+        {"A": [10.0, 20.0], "B": [0.0, 0.0], "C": [0.0, 0.0]},
+    )
+    assert_values_equal(result, [0.0, 0.0])
+
+
+def test_outer_guard_does_not_protect_neighbors_inside_the_window() -> None:
+    with pytest.raises(ZeroDivisionError):
+        evaluate(
+            "rolling_average({A} / {B}, 2) if {B} != 0 else 0",
+            {"A": [10.0, 20.0, 30.0], "B": [2.0, 0.0, 5.0]},
+        )
+
+
 def test_rolling_average_accepts_folded_window_expression() -> None:
     result = evaluate("rolling_average({A}, 2 + 2)", {"A": [1.0, 2.0, 3.0, 4.0, 5.0]})
     assert_values_equal(result, [1.0, 1.5, 2.0, 2.5, 3.5])
@@ -104,6 +136,13 @@ def test_rolling_average_accepts_folded_window_expression() -> None:
 
 def test_rolling_average_accepts_integral_float_window() -> None:
     result = evaluate("rolling_average({A}, 6 / 2)", {"A": [10.0, 20.0, 30.0, 40.0]})
+    assert_values_equal(result, [10.0, 15.0, 20.0, 30.0])
+
+
+def test_rolling_average_accepts_near_integer_folded_window() -> None:
+    result = evaluate(
+        "rolling_average({A}, 8.3 - 5.3)", {"A": [10.0, 20.0, 30.0, 40.0]}
+    )
     assert_values_equal(result, [10.0, 15.0, 20.0, 30.0])
 
 
@@ -122,6 +161,8 @@ def test_rolling_average_of_scalar_is_that_scalar() -> None:
             "rolling_average({A}, window=3)",
             "does not accept keyword arguments",
         ),
+        ("rolling_average(*{A}, 3)", "does not accept starred arguments"),
+        ("rolling_average({A}, *3)", "does not accept starred arguments"),
         ("rolling_average({A}, {B})", "window must be a numeric constant"),
         ("rolling_average({A}, 0)", "window must be a positive integer"),
         ("rolling_average({A}, -1)", "window must be a positive integer"),
