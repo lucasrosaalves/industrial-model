@@ -103,6 +103,16 @@ def generate_command(
             help="Replace the output directory if it already exists.",
         ),
     ] = False,
+    view_mapper_cache: Annotated[
+        bool,
+        typer.Option(
+            "--view-mapper-cache/--no-view-mapper-cache",
+            help=(
+                "Generate a ViewMapperCache from the data model schema so the "
+                "engine does not fetch views from CDF at runtime. Enabled by default."
+            ),
+        ),
+    ] = True,
     no_input: Annotated[
         bool,
         typer.Option(
@@ -138,6 +148,7 @@ def generate_command(
             client_name=answers.client_name,
             output_path=answers.output_dir,
             data_model=answers.data_model,
+            view_mapper_cache=view_mapper_cache,
         )
         should_overwrite = overwrite
         if answers.output_dir.exists() and not should_overwrite:
@@ -263,6 +274,16 @@ def login_command(
         str | None,
         typer.Option("--org", help="Organization hint for Cognite login."),
     ] = None,
+    view_mapper_cache: Annotated[
+        bool,
+        typer.Option(
+            "--view-mapper-cache/--no-view-mapper-cache",
+            help=(
+                "Generate a ViewMapperCache from the data model schema so the "
+                "engine does not fetch views from CDF at runtime. Enabled by default."
+            ),
+        ),
+    ] = True,
 ) -> None:
     try:
         token = browser_login(LoginOptions(org=org), LoginConfig(client_id=client_id))
@@ -302,6 +323,7 @@ def login_command(
                 external_id=selected.external_id,
                 version=selected.version,
             ),
+            view_mapper_cache=view_mapper_cache,
         )
         generate_client(generator_config, overwrite=overwrite)
         typer.echo(f"Generated {client_name} in {output_dir}")

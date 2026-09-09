@@ -1,0 +1,8 @@
+# ruff: noqa: E501
+from typing import Any
+
+from industrial_model import ViewMapperCache
+
+_VIEW_DUMPS: list[dict[str, Any]] = {{ view_dumps }}
+
+VIEW_MAPPER_CACHE = ViewMapperCache.from_dumps(_VIEW_DUMPS)

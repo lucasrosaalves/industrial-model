@@ -42,6 +42,7 @@ Connects to CDF with an existing bearer token and writes the client package to d
 | `--output-dir` / `--output` | Directory where the package is written |
 | `--client-name` | Name of the generated facade class (default: `{ExternalId}Client`) |
 | `--overwrite` | Replace the output directory if it already exists |
+| `--view-mapper-cache` / `--no-view-mapper-cache` | Embed a `ViewMapperCache` in the generated package so the engine does not fetch views from CDF at runtime. Enabled by default; pass `--no-view-mapper-cache` to skip it |
 | `--no-input` | Disable interactive prompts; all required values must come from flags |
 
 ### Quick start
@@ -69,6 +70,8 @@ industrial_model generate \
 ```
 
 When flags are omitted the CLI prompts for each value interactively. Pass `--no-input` to skip prompts and fail fast if a required flag is missing.
+
+The generated package includes a `ViewMapperCache` by default so the engine uses the schema captured at generation time. Pass `--no-view-mapper-cache` to skip it and fetch views from CDF at runtime.
 
 ---
 
@@ -103,6 +106,7 @@ generated/
 ├── __init__.py               # exports CogniteCoreClient
 ├── cognite_core_client.py    # facade class
 ├── models.py                 # all models re-exported
+├── view_mapper.py            # ViewMapperCache (omit with --no-view-mapper-cache)
 ├── cognite_asset/
 │   ├── __init__.py
 │   ├── client.py             # CogniteAssetClient
@@ -124,6 +128,7 @@ generated/
 | `__init__.py` | Exports the facade class by name |
 | `{client_module}.py` | Facade class; one attribute per view, each an instance of its view client |
 | `models.py` | Re-exports all view models from the per-view packages |
+| `view_mapper.py` | `VIEW_MAPPER_CACHE` built from dumped views (omit with `--no-view-mapper-cache`) |
 | `{view}/models.py` | `{View}` (writable model) and `{View}Aggregation` (aggregation model) |
 | `{view}/filters.py` | `{View}Filter` typed dict with one key per filterable property |
 | `{view}/types.py` | Literal types: `{View}QueryProperty`, `{View}FilterProperty`, `{View}GroupByProperty`, `{View}AggregationProperty` |
@@ -141,9 +146,9 @@ pagination, and async usage.
 
 ## How it works
 
-1. **Fetch views** — connects to CDF and retrieves the inline-expanded views for the target data model.
+1. **Fetch views** — connects to CDF and retrieves the inline-expanded views for the target data model. Dependency views referenced by relations are also retrieved so the generated `ViewMapperCache` is complete (skipped with `--no-view-mapper-cache`).
 2. **Build definitions** — maps each CDF property type to a Python type and resolves relation paths between views.
-3. **Render templates** — Jinja2 templates produce the source files for the package.
+3. **Render templates** — Jinja2 templates produce the source files for the package. Dumped views are written to `view_mapper.py` and the facade passes `VIEW_MAPPER_CACHE` into `Engine`. Pass `--no-view-mapper-cache` to skip this and fetch views from CDF at runtime.
 4. **Format** — runs `ruff format` then `ruff check --fix` on the output directory so the generated code is always clean.
 
 ---
@@ -202,6 +207,8 @@ config = GeneratorConfig.from_token(
 
 generate(config, overwrite=True)
 ```
+
+The generator embeds a `ViewMapperCache` by default. Pass `view_mapper_cache=False` to skip it.
 
 `generate_from_views` is also available if you already have a list of `cognite.client.data_classes.data_modeling.View` objects:
 

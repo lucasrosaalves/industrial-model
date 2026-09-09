@@ -19,6 +19,7 @@ class GeneratorConfig(BaseModel):
     project: str | None = None
     base_url: str | None = None
     instance_space_configs: list[InstanceSpaceConfig] = Field(default_factory=list)
+    view_mapper_cache: bool = True
 
     @classmethod
     def from_token(
@@ -30,6 +31,7 @@ class GeneratorConfig(BaseModel):
         client_name: str,
         output_path: Path,
         data_model: DataModelId,
+        view_mapper_cache: bool = True,
     ) -> "GeneratorConfig":
         return cls(
             client_name=client_name,
@@ -38,4 +40,5 @@ class GeneratorConfig(BaseModel):
             project=project,
             base_url=base_url,
             data_model=data_model,
+            view_mapper_cache=view_mapper_cache,
         )

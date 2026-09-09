@@ -1,6 +1,6 @@
 from .config import DataModelId
 from .constants import RelationMode
-from .engines import AsyncEngine, Engine
+from .engines import AsyncEngine, Engine, ViewMapperCache
 from .models import (
     AggregatedViewInstance,
     InstanceId,
@@ -43,6 +43,7 @@ __all__ = [
     "ValidationMode",
     "Engine",
     "AsyncEngine",
+    "ViewMapperCache",
     "PaginatedResult",
     "RootModel",
     "RelationMode",

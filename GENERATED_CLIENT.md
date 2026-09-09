@@ -24,6 +24,12 @@ typed filters, typed property literals, writable models, and aggregation models.
 Generated facades embed the data model id used during generation, so application
 code does not need to pass `DataModelId` again.
 
+Generated packages include a `ViewMapperCache` by default. The facade
+passes it into `Engine`, so the engine uses the schema captured at
+generation time and does not fetch views from CDF at runtime.
+Pass `--no-view-mapper-cache` when generating if you want the engine to load
+views from CDF instead.
+
 ### User Token
 
 Use this when you have a bearer token and want the generated client to create

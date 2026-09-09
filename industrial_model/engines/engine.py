@@ -6,6 +6,7 @@ from typing import Any, TypeVar
 from cognite.client import CogniteClient
 
 from industrial_model.cognite_adapters import CogniteAdapter
+from industrial_model.cognite_adapters.view_mapper import ViewMapperCache
 from industrial_model.config import DataModelId
 from industrial_model.models import (
     PaginatedResult,
@@ -35,9 +36,12 @@ class Engine:
         self,
         cognite_client: CogniteClient,
         data_model_id: DataModelId,
+        view_mapper_cache: ViewMapperCache | None = None,
     ):
         self._cognite_adapter = CogniteAdapter(
-            cognite_client.get_async_client(), data_model_id
+            cognite_client.get_async_client(),
+            data_model_id,
+            view_mapper_cache,
         )
 
     async def search_async(
@@ -140,9 +144,14 @@ class Engine:
         self._run_sync(self.delete_async(nodes))
 
     @classmethod
-    def from_config_file(cls, config_file: str | Path) -> "Engine":
+    def from_config_file(
+        cls,
+        config_file: str | Path,
+        *,
+        view_mapper_cache: ViewMapperCache | None = None,
+    ) -> "Engine":
         client, dm_id = generate_engine_params(config_file)
-        return cls(client, dm_id)
+        return cls(client, dm_id, view_mapper_cache)
 
     @classmethod
     def from_user_token(
@@ -154,6 +163,7 @@ class Engine:
         client_name: str = "industrial-model",
         base_url: str | None = None,
         cluster: str | None = None,
+        view_mapper_cache: ViewMapperCache | None = None,
     ) -> "Engine":
         client, dm_id = generate_engine_params_from_user_token(
             user_token=user_token,
@@ -163,7 +173,7 @@ class Engine:
             base_url=base_url,
             cluster=cluster,
         )
-        return cls(client, dm_id)
+        return cls(client, dm_id, view_mapper_cache)
 
     def _validate_data(
         self,

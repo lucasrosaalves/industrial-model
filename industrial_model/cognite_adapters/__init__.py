@@ -35,14 +35,21 @@ from .utils import (
     get_query_for_dependencies_pagination,
     map_nodes_and_edges,
 )
-from .view_mapper import ViewMapper
+from .view_mapper import ViewMapper, ViewMapperCache
 
 
 class CogniteAdapter:
-    def __init__(self, cognite_client: AsyncCogniteClient, data_model_id: DataModelId):
+    def __init__(
+        self,
+        cognite_client: AsyncCogniteClient,
+        data_model_id: DataModelId,
+        view_mapper_cache: ViewMapperCache | None = None,
+    ):
         self._cognite_client = cognite_client
 
-        view_mapper = ViewMapper(cognite_client, data_model_id)
+        view_mapper: ViewMapper = view_mapper_cache or ViewMapper(
+            cognite_client, data_model_id
+        )
         self._view_mapper = view_mapper
         self._optmizer = QueryOptimizer(cognite_client)
         self._query_mapper = QueryMapper(view_mapper)
