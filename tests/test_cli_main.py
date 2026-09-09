@@ -61,6 +61,8 @@ def test_generate_help_does_not_include_config_option() -> None:
     assert result.exit_code == 0
     assert "--config" not in output
     assert "--token" in output
+    assert "--view-mapper-cache" in output
+    assert "--no-view-mapper-ca" in output
 
 
 def test_data_model_selection_groups_versions_by_space_and_external_id() -> None:

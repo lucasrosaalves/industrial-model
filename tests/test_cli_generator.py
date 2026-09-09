@@ -68,7 +68,17 @@ def test_generate_from_views_writes_compileable_package(
     )
 
     generate_from_views(
-        [_asset_view(include_equipment=True), _equipment_view(), _file_view()],
+        [
+            _asset_view(
+                include_equipment=True,
+                description=(
+                    "The CogniteSourceSystem core concept is used to standardize "
+                    "the way source system is stored."
+                ),
+            ),
+            _equipment_view(),
+            _file_view(),
+        ],
         config,
         overwrite=False,
     )
@@ -82,6 +92,8 @@ def test_generate_from_views_writes_compileable_package(
     assert not (output_path / "models").exists()
     assert not (output_path / "requests").exists()
     assert not (output_path / "views").exists()
+    assert (output_path / "view_mapper.py").exists()
+    assert "# ruff: noqa: E501" in (output_path / "view_mapper.py").read_text()
     assert (output_path / "cognite_asset" / "client.py").exists()
     assert (output_path / "cognite_asset" / "models.py").exists()
     assert (output_path / "cognite_asset" / "filters.py").exists()
@@ -96,6 +108,8 @@ def test_generate_from_views_writes_compileable_package(
     assert "user_token: UserToken" in facade_content
     assert "self.cognite_asset = CogniteAssetClient(engine)" in facade_content
     assert "self.cognite_equipment = CogniteEquipmentClient(engine)" in facade_content
+    assert "from .view_mapper import VIEW_MAPPER_CACHE" in facade_content
+    assert "view_mapper_cache=VIEW_MAPPER_CACHE" in facade_content
     assert 'Literal["name", "parent", "class", "equipment"]' not in facade_content
 
     asset_client_content = (output_path / "cognite_asset" / "client.py").read_text()
@@ -186,7 +200,7 @@ def test_generate_from_views_writes_compileable_package(
     assert mypy_result.returncode == 0, mypy_result.stdout + mypy_result.stderr
 
     monkeypatch.syspath_prepend(str(tmp_path))
-    sys.modules.pop("generated_client", None)
+    _unload_generated_client_modules()
     module = importlib.import_module("generated_client")
     facade_module = importlib.import_module("generated_client.cognite_core_client")
     assert hasattr(module, "CogniteCoreClient")
@@ -209,6 +223,10 @@ def test_generate_from_views_writes_compileable_package(
         client_from_cognite_client.engine._cognite_adapter._cognite_client
     )
     assert passed_cognite_client.config.project == "test-project"
+    cache_module = importlib.import_module("generated_client.view_mapper")
+    assert client_from_cognite_client.engine._cognite_adapter._view_mapper is (
+        cache_module.VIEW_MAPPER_CACHE
+    )
 
     client_from_token = module.CogniteCoreClient(
         user_token="test-token",
@@ -271,7 +289,43 @@ def test_generate_from_views_keeps_missing_relation_target_as_instance_id(
         py_compile.compile(str(path), doraise=True)
 
 
-def _asset_view(*, include_equipment: bool = False) -> View:
+def test_generate_from_views_can_skip_view_mapper_cache(tmp_path: Path) -> None:
+    output_path = tmp_path / "generated_client"
+    config = GeneratorConfig(
+        client_name="CogniteCoreClient",
+        output_path=output_path,
+        data_model=DataModelId(
+            external_id="CogniteCore",
+            space="cdf_cdm",
+            version="v1",
+        ),
+        base_url="https://westeurope-1.cognitedata.com",
+        view_mapper_cache=False,
+    )
+
+    generate_from_views(
+        [_asset_view(include_equipment=True), _equipment_view(), _file_view()],
+        config,
+        overwrite=False,
+    )
+
+    assert not (output_path / "view_mapper.py").exists()
+    facade_content = (output_path / "cognite_core_client.py").read_text()
+    assert "VIEW_MAPPER_CACHE" not in facade_content
+
+    for path in output_path.rglob("*.py"):
+        py_compile.compile(str(path), doraise=True)
+
+
+def _unload_generated_client_modules() -> None:
+    for name in list(sys.modules):
+        if name == "generated_client" or name.startswith("generated_client."):
+            sys.modules.pop(name, None)
+
+
+def _asset_view(
+    *, include_equipment: bool = False, description: str | None = None
+) -> View:
     container = ContainerId("cdf_cdm", "CogniteAsset")
     view_id = ViewId("cdf_cdm", "CogniteAsset", "v1")
     equipment_view_id = ViewId("cdf_cdm", "CogniteEquipment", "v1")
@@ -342,7 +396,7 @@ def _asset_view(*, include_equipment: bool = False) -> View:
         properties=properties,
         last_updated_time=0,
         created_time=0,
-        description=None,
+        description=description,
         name=None,
         filter=None,
         implements=None,

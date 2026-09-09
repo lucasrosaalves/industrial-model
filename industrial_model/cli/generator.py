@@ -3,6 +3,7 @@ import subprocess
 import sys
 from collections.abc import Sequence
 from pathlib import Path
+from pprint import pformat
 from typing import Any
 from urllib.parse import urlparse
 
@@ -10,6 +11,9 @@ from cognite.client import ClientConfig, CogniteClient
 from cognite.client.credentials import Token
 from cognite.client.data_classes.data_modeling import View
 
+from industrial_model.cognite_adapters.view_mapper import (
+    collect_new_dependency_view_ids,
+)
 from industrial_model.config import DataModelId
 
 from .config import GeneratorConfig, InstanceSpaceConfig
@@ -18,12 +22,22 @@ from .helpers import to_snake
 
 
 def generate(config: GeneratorConfig, *, overwrite: bool = False) -> None:
-    views = _get_views(config)
-    generate_from_views(views, config, overwrite=overwrite)
+    cognite_client = _create_cognite_client(config)
+    views = _get_views(cognite_client, config.data_model)
+    cache_views = (
+        _include_dependency_views(cognite_client, views)
+        if config.view_mapper_cache
+        else views
+    )
+    generate_from_views(views, config, overwrite=overwrite, cache_views=cache_views)
 
 
 def generate_from_views(
-    views: Sequence[View], config: GeneratorConfig, *, overwrite: bool = False
+    views: Sequence[View],
+    config: GeneratorConfig,
+    *,
+    overwrite: bool = False,
+    cache_views: Sequence[View] | None = None,
 ) -> None:
     view_definitions = resolve_all_relation_paths(
         _get_view_definitions(views, config.instance_space_configs)
@@ -37,16 +51,31 @@ def generate_from_views(
         client_name=config.client_name,
         data_model=config.data_model,
         cluster=_extract_cluster(config.base_url),
+        view_mapper_cache=config.view_mapper_cache,
+        cache_views=cache_views or views,
     )
     _format_output_path(output_path)
 
 
-def _get_views(config: GeneratorConfig) -> list[View]:
-    cognite_client = _create_cognite_client(config)
-    data_model = cognite_client.data_modeling.data_models.retrieve(
-        ids=config.data_model.as_tuple(), inline_views=True
+def _get_views(cognite_client: CogniteClient, data_model: DataModelId) -> list[View]:
+    retrieved = cognite_client.data_modeling.data_models.retrieve(
+        ids=data_model.as_tuple(), inline_views=True
     )
-    return data_model.latest_version().views
+    return list(retrieved.latest_version().views)
+
+
+def _include_dependency_views(
+    cognite_client: CogniteClient, views: Sequence[View]
+) -> list[View]:
+    expanded = list(views)
+    while True:
+        new_dependency_view_ids = collect_new_dependency_view_ids(expanded)
+        if not new_dependency_view_ids:
+            break
+        expanded.extend(
+            cognite_client.data_modeling.views.retrieve(ids=new_dependency_view_ids)
+        )
+    return expanded
 
 
 def _create_cognite_client(config: GeneratorConfig) -> CogniteClient:
@@ -102,6 +131,8 @@ def _write_package_files(
     client_name: str,
     data_model: DataModelId,
     cluster: str | None,
+    view_mapper_cache: bool,
+    cache_views: Sequence[View],
 ) -> None:
     env = _create_jinja_environment()
     paths = {
@@ -109,6 +140,8 @@ def _write_package_files(
         "clients_facade.j2": output_path / f"{to_snake(client_name)}.py",
         "models.j2": output_path / "models.py",
     }
+    if view_mapper_cache:
+        paths["view_mapper_cache.j2"] = output_path / "view_mapper.py"
     (output_path / "py.typed").touch()
 
     context = {
@@ -119,6 +152,12 @@ def _write_package_files(
         "data_model_space": repr(data_model.space),
         "data_model_version": repr(data_model.version),
         "default_cluster": repr(cluster),
+        "view_mapper_cache": view_mapper_cache,
+        "view_dumps": (
+            pformat([view.dump() for view in cache_views], width=88, sort_dicts=False)
+            if view_mapper_cache
+            else "[]"
+        ),
     }
     for template_name, path in paths.items():
         path.write_text(

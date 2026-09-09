@@ -8,6 +8,9 @@ from industrial_model import DataModelId, Engine
 {% for view_definition in view_definitions %}
 from .{{ view_definition.view_module_name }} import {{ view_definition.view_name }}Client
 {% endfor %}
+{% if view_mapper_cache %}
+from .view_mapper import VIEW_MAPPER_CACHE
+{% endif %}
 
 
 DATA_MODEL_ID = DataModelId(
@@ -74,7 +77,11 @@ class {{ client_name }}:
         if isinstance(engine, CogniteClient):
             if user_token is not None or project is not None:
                 raise ValueError("Pass either a CogniteClient or token/project credentials")
-            return Engine(engine, DATA_MODEL_ID)
+            return Engine(
+                engine,
+                DATA_MODEL_ID,
+                {% if view_mapper_cache %}view_mapper_cache=VIEW_MAPPER_CACHE,{% endif %}
+            )
 
         if engine is not None:
             raise TypeError("Expected Engine, CogniteClient, or token/project credentials")
@@ -89,4 +96,5 @@ class {{ client_name }}:
             data_model_id=DATA_MODEL_ID,
             client_name=client_name,
             cluster=cluster,
+            {% if view_mapper_cache %}view_mapper_cache=VIEW_MAPPER_CACHE,{% endif %}
         )
