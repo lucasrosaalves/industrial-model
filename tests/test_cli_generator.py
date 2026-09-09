@@ -93,7 +93,6 @@ def test_generate_from_views_writes_compileable_package(
     assert not (output_path / "requests").exists()
     assert not (output_path / "views").exists()
     assert (output_path / "view_mapper.py").exists()
-    assert "# ruff: noqa: E501" in (output_path / "view_mapper.py").read_text()
     assert (output_path / "cognite_asset" / "client.py").exists()
     assert (output_path / "cognite_asset" / "models.py").exists()
     assert (output_path / "cognite_asset" / "filters.py").exists()

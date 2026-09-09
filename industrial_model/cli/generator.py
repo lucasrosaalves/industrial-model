@@ -24,10 +24,13 @@ from .helpers import to_snake
 def generate(config: GeneratorConfig, *, overwrite: bool = False) -> None:
     cognite_client = _create_cognite_client(config)
     views = _get_views(cognite_client, config.data_model)
-    cache_views = (
-        _include_dependency_views(cognite_client, views)
-        if config.view_mapper_cache
-        else views
+    cache_views = sorted(
+        (
+            _include_dependency_views(cognite_client, views)
+            if config.view_mapper_cache
+            else views
+        ),
+        key=lambda view: (view.external_id, view.space),
     )
     generate_from_views(views, config, overwrite=overwrite, cache_views=cache_views)
 
@@ -67,7 +70,7 @@ def _get_views(cognite_client: CogniteClient, data_model: DataModelId) -> list[V
 def _include_dependency_views(
     cognite_client: CogniteClient, views: Sequence[View]
 ) -> list[View]:
-    expanded = list(views)
+    expanded: list[View] = list(views)
     while True:
         new_dependency_view_ids = collect_new_dependency_view_ids(expanded)
         if not new_dependency_view_ids:
@@ -154,7 +157,7 @@ def _write_package_files(
         "default_cluster": repr(cluster),
         "view_mapper_cache": view_mapper_cache,
         "view_dumps": (
-            pformat([view.dump() for view in cache_views], width=88, sort_dicts=False)
+            pformat([view.dump() for view in cache_views], width=70, sort_dicts=False)
             if view_mapper_cache
             else "[]"
         ),
