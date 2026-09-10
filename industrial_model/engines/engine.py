@@ -9,6 +9,7 @@ from industrial_model.cognite_adapters import CogniteAdapter
 from industrial_model.cognite_adapters.view_mapper import ViewMapperCache
 from industrial_model.config import DataModelId
 from industrial_model.models import (
+    IngestionMode,
     PaginatedResult,
     TAggregatedViewInstance,
     TViewInstance,
@@ -85,10 +86,18 @@ class Engine:
         entries: list[TWritableViewInstance],
         replace: bool = False,
         remove_unset: bool = False,
+        skip_on_version_conflict: bool = False,
+        ingestion_mode: IngestionMode = "upsert",
     ) -> None:
         if not entries:
             return
-        await self._cognite_adapter.upsert(entries, replace, remove_unset)
+        await self._cognite_adapter.upsert(
+            entries,
+            replace,
+            remove_unset,
+            skip_on_version_conflict,
+            ingestion_mode,
+        )
 
     async def delete_async(self, nodes: list[TViewInstance]) -> None:
         await self._cognite_adapter.delete(nodes)
@@ -137,8 +146,18 @@ class Engine:
         entries: list[TWritableViewInstance],
         replace: bool = False,
         remove_unset: bool = False,
+        skip_on_version_conflict: bool = False,
+        ingestion_mode: IngestionMode = "upsert",
     ) -> None:
-        self._run_sync(self.upsert_async(entries, replace, remove_unset))
+        self._run_sync(
+            self.upsert_async(
+                entries,
+                replace,
+                remove_unset,
+                skip_on_version_conflict,
+                ingestion_mode,
+            )
+        )
 
     def delete(self, nodes: list[TViewInstance]) -> None:
         self._run_sync(self.delete_async(nodes))

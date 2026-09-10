@@ -839,6 +839,12 @@ engine.upsert(instances, replace=True)
 
 # Upsert with remove_unset=True (remove fields not set in model)
 engine.upsert(instances, remove_unset=True)
+
+# Create-only: fail the apply if any instance already exists
+engine.upsert(instances, ingestion_mode="create")
+
+# Create missing instances; skip ones that already exist
+engine.upsert(instances, ingestion_mode="create", skip_on_version_conflict=True)
 ```
 
 ### Create New Instances
@@ -1004,7 +1010,13 @@ results = await async_engine.aggregate_async(aggregate_statement)
 ```python
 # Async upsert
 instances = [new_asset1, new_asset2]
-await async_engine.upsert_async(instances, replace=False, remove_unset=False)
+await async_engine.upsert_async(
+    instances,
+    replace=False,
+    remove_unset=False,
+    ingestion_mode="upsert",
+    skip_on_version_conflict=False,
+)
 
 # Async delete
 await async_engine.delete_async(instances_to_delete)

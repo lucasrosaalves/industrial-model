@@ -3,6 +3,7 @@ from .constants import RelationMode
 from .engines import AsyncEngine, Engine, ViewMapperCache
 from .models import (
     AggregatedViewInstance,
+    IngestionMode,
     InstanceId,
     PaginatedResult,
     RootModel,
@@ -40,6 +41,7 @@ __all__ = [
     "DataModelId",
     "TAggregatedViewInstance",
     "TWritableViewInstance",
+    "IngestionMode",
     "ValidationMode",
     "Engine",
     "AsyncEngine",

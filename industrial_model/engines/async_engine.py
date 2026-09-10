@@ -5,6 +5,7 @@ from cognite.client import CogniteClient
 from industrial_model.cognite_adapters.view_mapper import ViewMapperCache
 from industrial_model.config import DataModelId
 from industrial_model.models import (
+    IngestionMode,
     PaginatedResult,
     TAggregatedViewInstance,
     TViewInstance,
@@ -65,8 +66,16 @@ class AsyncEngine:
         entries: list[TWritableViewInstance],
         replace: bool = False,
         remove_unset: bool = False,
+        skip_on_version_conflict: bool = False,
+        ingestion_mode: IngestionMode = "upsert",
     ) -> None:
-        return await self._engine.upsert_async(entries, replace, remove_unset)
+        return await self._engine.upsert_async(
+            entries,
+            replace,
+            remove_unset,
+            skip_on_version_conflict,
+            ingestion_mode,
+        )
 
     async def delete_async(self, nodes: list[TViewInstance]) -> None:
         return await self._engine.delete_async(nodes)

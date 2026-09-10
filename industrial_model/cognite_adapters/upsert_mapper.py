@@ -13,6 +13,7 @@ from cognite.client.data_classes.data_modeling import (
 from industrial_model.cognite_adapters.models import UpsertOperation
 from industrial_model.models import (
     EdgeContainer,
+    IngestionMode,
     InstanceId,
     TWritableViewInstance,
 )
@@ -26,7 +27,10 @@ class UpsertMapper:
         self._view_mapper = view_mapper
 
     def map(
-        self, instances: list[TWritableViewInstance], remove_unset: bool
+        self,
+        instances: list[TWritableViewInstance],
+        remove_unset: bool,
+        ingestion_mode: IngestionMode = "upsert",
     ) -> UpsertOperation:
         nodes: dict[tuple[str, str], NodeApply] = {}
         edges: dict[tuple[str, str], EdgeApply] = {}
@@ -34,7 +38,7 @@ class UpsertMapper:
 
         for instance in instances:
             entry_nodes, entry_edges, entry_edges_to_delete = self._map_instance(
-                instance, remove_unset
+                instance, remove_unset, ingestion_mode
             )
 
             nodes[instance.as_tuple()] = entry_nodes
@@ -50,7 +54,10 @@ class UpsertMapper:
         )
 
     def _map_instance(
-        self, instance: TWritableViewInstance, remove_unset: bool
+        self,
+        instance: TWritableViewInstance,
+        remove_unset: bool,
+        ingestion_mode: IngestionMode,
     ) -> tuple[NodeApply, list[EdgeApply], list[EdgeContainer]]:
         view = self._view_mapper.get_view(instance.get_view_external_id())
 
@@ -95,6 +102,7 @@ class UpsertMapper:
         node = NodeApply(
             external_id=instance.external_id,
             space=instance.space,
+            existing_version=self._existing_version(ingestion_mode),
             sources=[NodeOrEdgeData(source=view.as_id(), properties=properties)],
         )
 
@@ -147,3 +155,7 @@ class UpsertMapper:
             )
 
         return result
+
+    @staticmethod
+    def _existing_version(ingestion_mode: IngestionMode) -> int | None:
+        return 0 if ingestion_mode == "create" else None

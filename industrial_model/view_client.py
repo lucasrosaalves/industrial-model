@@ -6,6 +6,7 @@ from typing import Any, Generic, TypeVar, cast
 from industrial_model.engines import Engine
 from industrial_model.models import (
     AggregatedViewInstance,
+    IngestionMode,
     PaginatedResult,
     WritableViewInstance,
 )
@@ -169,11 +170,33 @@ class ViewClient(
             build_query_statement(self._entity_cls, filters, limit=limit)
         )
 
-    def upsert(self, entries: list[_T], replace: bool = False) -> None:
-        return self._engine.upsert(entries, replace)
+    def upsert(
+        self,
+        entries: list[_T],
+        replace: bool = False,
+        skip_on_version_conflict: bool = False,
+        ingestion_mode: IngestionMode = "upsert",
+    ) -> None:
+        return self._engine.upsert(
+            entries,
+            replace,
+            skip_on_version_conflict=skip_on_version_conflict,
+            ingestion_mode=ingestion_mode,
+        )
 
-    async def upsert_async(self, entries: list[_T], replace: bool = False) -> None:
-        return await self._engine.upsert_async(entries, replace)
+    async def upsert_async(
+        self,
+        entries: list[_T],
+        replace: bool = False,
+        skip_on_version_conflict: bool = False,
+        ingestion_mode: IngestionMode = "upsert",
+    ) -> None:
+        return await self._engine.upsert_async(
+            entries,
+            replace,
+            skip_on_version_conflict=skip_on_version_conflict,
+            ingestion_mode=ingestion_mode,
+        )
 
     def delete(self, nodes: list[_T]) -> None:
         return self._engine.delete(nodes)
