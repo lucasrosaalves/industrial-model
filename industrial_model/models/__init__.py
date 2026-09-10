@@ -2,6 +2,7 @@ from .base import RootModel
 from .entities import (
     AggregatedViewInstance,
     EdgeContainer,
+    IngestionMode,
     InstanceId,
     PaginatedResult,
     TAggregatedViewInstance,
@@ -25,6 +26,7 @@ __all__ = [
     "TViewInstance",
     "TWritableViewInstance",
     "ViewInstance",
+    "IngestionMode",
     "ValidationMode",
     "PaginatedResult",
     "ViewInstanceConfig",

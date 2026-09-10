@@ -185,3 +185,4 @@ class PaginatedResult(RootModel, Generic[TViewInstance]):
 
 
 ValidationMode = Literal["raiseOnError", "ignoreOnError"]
+IngestionMode = Literal["upsert", "create"]

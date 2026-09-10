@@ -514,6 +514,18 @@ Use `replace=True` to replace properties instead of patching them:
 client.cognite_asset.upsert([asset], replace=True)
 ```
 
+Use `ingestion_mode="create"` to insert only (`existingVersion=0`). Combine it with
+`skip_on_version_conflict=True` to skip instances that already exist:
+
+```python
+client.cognite_asset.upsert([asset], ingestion_mode="create")
+client.cognite_asset.upsert(
+    [asset],
+    ingestion_mode="create",
+    skip_on_version_conflict=True,
+)
+```
+
 Upsert related instances by using generated models or `InstanceId` values:
 
 ```python

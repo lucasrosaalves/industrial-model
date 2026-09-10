@@ -12,6 +12,7 @@ from cognite.client.data_classes.data_modeling.query import (
 
 from industrial_model.config import DataModelId
 from industrial_model.models import (
+    IngestionMode,
     TAggregatedViewInstance,
     TViewInstance,
     TWritableViewInstance,
@@ -142,10 +143,12 @@ class CogniteAdapter:
         entries: list[TWritableViewInstance],
         replace: bool = False,
         remove_unset: bool = False,
+        skip_on_version_conflict: bool = False,
+        ingestion_mode: IngestionMode = "upsert",
     ) -> None:
         await self._view_mapper.load_views()
         logger = logging.getLogger(__name__)
-        operation = self._upsert_mapper.map(entries, remove_unset)
+        operation = self._upsert_mapper.map(entries, remove_unset, ingestion_mode)
 
         for node_chunk in operation.chunk_nodes():
             logger.debug(
@@ -155,6 +158,7 @@ class CogniteAdapter:
             await self._cognite_client.data_modeling.instances.apply(
                 nodes=node_chunk,
                 replace=replace,
+                skip_on_version_conflict=skip_on_version_conflict,
             )
 
         for edge_chunk in operation.chunk_edges():
@@ -165,6 +169,7 @@ class CogniteAdapter:
             await self._cognite_client.data_modeling.instances.apply(
                 edges=edge_chunk,
                 replace=replace,
+                skip_on_version_conflict=skip_on_version_conflict,
             )
 
         for edges_to_remove_chunk in operation.chunk_edges_to_delete():
