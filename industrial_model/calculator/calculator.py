@@ -37,12 +37,20 @@ class Calculator:
         self._series_reducer = SeriesReducer()
 
     def calculate(
-        self, query: CalculatorQuery, start: datetime, end: datetime
+        self,
+        query: CalculatorQuery,
+        start: datetime,
+        end: datetime,
+        include_inputs: bool = True,
     ) -> CalculationResult:
-        return self.calculate_multiples([query], start, end)[0]
+        return self.calculate_multiples([query], start, end, include_inputs)[0]
 
     def calculate_multiples(
-        self, queries: list[CalculatorQuery], start: datetime, end: datetime
+        self,
+        queries: list[CalculatorQuery],
+        start: datetime,
+        end: datetime,
+        include_inputs: bool = True,
     ) -> list[CalculationResult]:
         timer = StageTimer() if logger.isEnabledFor(logging.DEBUG) else None
         ok = False
@@ -73,6 +81,7 @@ class Calculator:
                         query,
                         leaf_series_by_parameter[offset : offset + count],
                         timer,
+                        include_inputs,
                     )
                 )
                 offset += count
@@ -87,6 +96,7 @@ class Calculator:
         query: CalculatorQuery,
         leaf_series_by_parameter: list[list[Series]],
         timer: StageTimer | None = None,
+        include_inputs: bool = True,
     ) -> CalculationResult:
         it = iter(leaf_series_by_parameter)
         ts_aliases: list[str] = []
@@ -130,16 +140,18 @@ class Calculator:
             values = evaluate(query.formula, values_map)
 
         with timed(timer, "assemble"):
-            inputs: dict[str, list[DataPoint]] = {
-                alias: _to_datapoints(series)
-                for alias, series in zip(ts_aliases, ts_series, strict=True)
-            }
-            for parameter in query.parameters:
-                if isinstance(parameter, ConstantParameter):
-                    inputs[parameter.alias] = [
-                        DataPoint(timestamp=ts, value=parameter.value)
-                        for ts in timestamps
-                    ]
+            inputs: dict[str, list[DataPoint]] = {}
+            if include_inputs:
+                inputs = {
+                    alias: _to_datapoints(series)
+                    for alias, series in zip(ts_aliases, ts_series, strict=True)
+                }
+                for parameter in query.parameters:
+                    if isinstance(parameter, ConstantParameter):
+                        inputs[parameter.alias] = [
+                            DataPoint(timestamp=ts, value=parameter.value)
+                            for ts in timestamps
+                        ]
             result = CalculationResult(
                 query=query,
                 datapoints=_to_datapoints(zip(timestamps, values, strict=True)),

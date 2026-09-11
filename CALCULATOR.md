@@ -61,6 +61,13 @@ for dp in result.datapoints:
 
 `result.query` is the exact `CalculatorQuery` that was passed in — handy when matching results back to their originating query after `calculate_multiples`. `result.inputs` is the aligned series that the formula actually evaluated: after retrieval, any `MultiTimeSeriesParameter` reduction, timestamp alignment, and constant broadcast. Each input series is a `list[DataPoint]` sharing the same timestamps as `datapoints`; `inputs[alias][i]` is the point used to compute `datapoints[i]`. These series are already in memory at evaluation time, so returning them does not refetch from CDF.
 
+Both `calculate` and `calculate_multiples` accept an `include_inputs: bool = True` flag. Building `result.inputs` wraps every input series in `DataPoint` objects, which is pure overhead if you never read that field — pass `include_inputs=False` to skip it and get back an empty `inputs` dict. This has no effect on `datapoints`, only on `inputs`; nothing is fetched differently.
+
+```python
+result = calculator.calculate(query, start, end, include_inputs=False)
+# result.inputs == {}
+```
+
 Each `DataPoint.timestamp` comes from the **shared time axis** of the query's time-series parameters (`TimeSeriesParameter` or `MultiTimeSeriesParameter`). By default (`alignment="intersect"`) that axis is the **intersection** of their timestamps: a point is emitted only when every time-series parameter has a value at that exact timestamp. Set `alignment="strict"` to require identical timestamps and raise `ParameterTimestampError` if they differ. `ConstantParameter` values don't participate in this alignment — they are broadcast to the resulting length. See [Constants](#constants) and [Timestamp alignment](#timestamp-alignment) below.
 
 ### Batching multiple queries
@@ -78,6 +85,8 @@ results = calculator.calculate_multiples(
 )
 # results[0], results[1] -> CalculationResult, one per input query, same order
 ```
+
+The same `include_inputs` flag applies here and skips assembling `inputs` for every result in the batch.
 
 ### Debug logs
 

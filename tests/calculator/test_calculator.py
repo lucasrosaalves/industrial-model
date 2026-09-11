@@ -829,6 +829,19 @@ def test_calculate_inputs_include_every_parameter_at_aligned_indexes() -> None:
     _assert_inputs_share_result_timestamps(result)
 
 
+def test_calculate_skips_building_inputs_when_include_inputs_is_false() -> None:
+    param = _make_param("A", external_id="ts1")
+    raw = _make_datapoints_list({("s", "ts1"): [1.0, 2.0, 3.0]})
+
+    calc = Calculator(_client_returning(raw))
+    result = calc.calculate(
+        _make_query("{A} * 2", [param]), _START, _END, include_inputs=False
+    )
+
+    assert result.inputs == {}
+    assert [dp.value for dp in result.datapoints] == [2.0, 4.0, 6.0]
+
+
 def test_calculate_inputs_are_the_intersected_values_not_the_raw_series() -> None:
     p_a = _make_param("A", external_id="ts_a")
     p_b = _make_param("B", external_id="ts_b")
