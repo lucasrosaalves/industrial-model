@@ -1,8 +1,21 @@
 from __future__ import annotations
 
-from typing import Literal, TypeAlias
+from typing import Literal, TypeAlias, TypedDict
+
+from industrial_model.constants import SORT_DIRECTION
 
 {{ view_definition.query_property_type_name }}: TypeAlias = {{ view_definition.query_property_literal }}
 {{ view_definition.group_by_property_type_name }}: TypeAlias = {{ view_definition.group_by_property_literal }}
 {{ view_definition.aggregation_property_type_name }}: TypeAlias = {{ view_definition.aggregate_property_literal }}
 {{ view_definition.include_property_type_name }}: TypeAlias = {{ view_definition.include_property_literal }}
+{{ view_definition.sort_property_type_name }}: TypeAlias = {{ view_definition.sort_property_literal }}
+
+{{ view_definition.sort_type_name }} = TypedDict(
+    "{{ view_definition.sort_type_name }}",
+    {
+{% for field in view_definition.sort_fields %}
+        "{{ field }}": SORT_DIRECTION,
+{% endfor %}
+    },
+    total=False,
+)

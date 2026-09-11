@@ -408,6 +408,31 @@ class ViewDefinition(BaseModel):
         return f"{self.view_name}IncludeProperty"
 
     @property
+    def sort_property_type_name(self) -> str:
+        return f"{self.view_name}SortProperty"
+
+    @property
+    def sort_type_name(self) -> str:
+        return f"{self.view_name}Sort"
+
+    @property
+    def sort_fields(self) -> list[str]:
+        return [
+            "externalId",
+            "space",
+            *[
+                field.field_alias or to_camel(field.field_name)
+                for field in self.search_fields
+                if not field.is_list and field.field_type != "Any"
+            ],
+        ]
+
+    @property
+    def sort_property_literal(self) -> str:
+        fields_as_str = ", ".join(f'"{field}"' for field in self.sort_fields)
+        return f"Literal[{fields_as_str}]"
+
+    @property
     def include_property_literal(self) -> str:
         fields = [
             relation.property

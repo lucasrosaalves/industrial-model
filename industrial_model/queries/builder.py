@@ -23,6 +23,7 @@ def build_query_statement(
     filters: Mapping[str, Any] | None = None,
     *,
     exclude_relations: list[str] | None = None,
+    sort: Mapping[str, Any] | None = None,
     limit: int = 1000,
     cursor: str | None = None,
 ) -> Statement[TViewInstance]:
@@ -32,6 +33,9 @@ def build_query_statement(
     if exclude_relations:
         for relation_property in exclude_relations:
             statement.relation_mode(relation_property, "instanceId")
+    if sort:
+        for property_, direction in sort.items():
+            statement.sort(property_, direction)
     statement.limit(limit)
     statement.cursor(cursor)
     return statement

@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import datetime
-from typing import TypedDict
+from collections.abc import Mapping
+from typing import TypeAlias, TypedDict
 
 from industrial_model import InstanceId
+from industrial_model.constants import SORT_DIRECTION
 
 
 class StringFilter(TypedDict, total=False):
@@ -72,3 +74,6 @@ class DateFilter(TypedDict, total=False):
     lte: datetime.date
     in_: list[datetime.date]
     exists: bool
+
+
+QuerySort: TypeAlias = Mapping[str, SORT_DIRECTION]

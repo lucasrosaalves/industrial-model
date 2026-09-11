@@ -9,6 +9,7 @@ from .types import (
     {{ view_definition.group_by_property_type_name }},
     {{ view_definition.include_property_type_name }},
     {{ view_definition.query_property_type_name }},
+    {{ view_definition.sort_type_name }},
 )
 
 _RELATION_PROPERTIES: frozenset[str] = {{ view_definition.relation_property_set }}
@@ -22,6 +23,7 @@ class {{ view_definition.view_name }}Client(
         {{ view_definition.query_property_type_name }},
         {{ view_definition.group_by_property_type_name }},
         {{ view_definition.aggregation_property_type_name }},
+        {{ view_definition.sort_type_name }},
     ]
 ):
     def __init__(self, engine: Engine) -> None:
@@ -32,6 +34,7 @@ class {{ view_definition.view_name }}Client(
         filters: {{ view_definition.view_name }}Filter | None = None,
         *,
         include: list[{{ view_definition.include_property_type_name }}] | None = None,
+        sort: {{ view_definition.sort_type_name }} | None = None,
         limit: int = 1000,
         cursor: str | None = None,
     ) -> PaginatedResult[{{ view_definition.view_name }}]:
@@ -40,6 +43,7 @@ class {{ view_definition.view_name }}Client(
                 self._entity_cls,
                 filters,
                 exclude_relations=[p for p in _RELATION_PROPERTIES if p not in (include or ())],
+                sort=sort,
                 limit=limit,
                 cursor=cursor,
             )
@@ -50,6 +54,7 @@ class {{ view_definition.view_name }}Client(
         filters: {{ view_definition.view_name }}Filter | None = None,
         *,
         include: list[{{ view_definition.include_property_type_name }}] | None = None,
+        sort: {{ view_definition.sort_type_name }} | None = None,
         limit: int = 1000,
         cursor: str | None = None,
     ) -> PaginatedResult[{{ view_definition.view_name }}]:
@@ -58,6 +63,7 @@ class {{ view_definition.view_name }}Client(
                 self._entity_cls,
                 filters,
                 exclude_relations=[p for p in _RELATION_PROPERTIES if p not in (include or ())],
+                sort=sort,
                 limit=limit,
                 cursor=cursor,
             )
@@ -68,6 +74,7 @@ class {{ view_definition.view_name }}Client(
         filters: {{ view_definition.view_name }}Filter | None = None,
         *,
         include: list[{{ view_definition.include_property_type_name }}] | None = None,
+        sort: {{ view_definition.sort_type_name }} | None = None,
         limit: int = 1000,
     ) -> list[{{ view_definition.view_name }}]:
         return self._engine.query_all_pages(
@@ -75,6 +82,7 @@ class {{ view_definition.view_name }}Client(
                 self._entity_cls,
                 filters,
                 exclude_relations=[p for p in _RELATION_PROPERTIES if p not in (include or ())],
+                sort=sort,
                 limit=limit,
             )
         )
@@ -84,6 +92,7 @@ class {{ view_definition.view_name }}Client(
         filters: {{ view_definition.view_name }}Filter | None = None,
         *,
         include: list[{{ view_definition.include_property_type_name }}] | None = None,
+        sort: {{ view_definition.sort_type_name }} | None = None,
         limit: int = 1000,
     ) -> list[{{ view_definition.view_name }}]:
         return await self._engine.query_all_pages_async(
@@ -91,6 +100,7 @@ class {{ view_definition.view_name }}Client(
                 self._entity_cls,
                 filters,
                 exclude_relations=[p for p in _RELATION_PROPERTIES if p not in (include or ())],
+                sort=sort,
                 limit=limit,
             )
         )

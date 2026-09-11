@@ -11,6 +11,7 @@ from .filter_types import (
     InstanceIdFilter,
     InstanceIdListFilter,
     IntFilter,
+    QuerySort,
     StringFilter,
     StringListFilter,
 )
@@ -40,4 +41,5 @@ __all__ = [
     "InstanceIdListFilter",
     "DatetimeFilter",
     "DateFilter",
+    "QuerySort",
 ]

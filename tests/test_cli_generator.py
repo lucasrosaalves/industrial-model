@@ -38,6 +38,9 @@ def test_view_definition_maps_cdf_properties_to_model_fields() -> None:
     )
     assert str(definition.search_fields[2]) == "parent: InstanceId | None = None"
     assert str(definition.search_fields[3]) == 'class_: str = Field(alias="class")'
+    assert definition.sort_property_literal == (
+        'Literal["externalId", "space", "name", "parent", "class"]'
+    )
     assert definition.regular_fields == []
     assert all(field.field_name != "files" for field in definition.entity_fields)
     assert all(
@@ -118,10 +121,13 @@ def test_generate_from_views_writes_compileable_package(
     assert "CogniteAssetGroupByProperty" in asset_client_content
     assert "CogniteAssetAggregationProperty" in asset_client_content
     assert "CogniteAssetIncludeProperty" in asset_client_content
+    assert "CogniteAssetSort" in asset_client_content
     assert (
         "include: list[CogniteAssetIncludeProperty] | None = None"
         in asset_client_content
     )
+    assert "sort: CogniteAssetSort | None = None" in asset_client_content
+    assert "sort=sort," in asset_client_content
     assert "_RELATION_PROPERTIES" in asset_client_content
     assert '"files"' not in asset_client_content
     # Level-2 nested relation paths are included
@@ -149,6 +155,23 @@ def test_generate_from_views_writes_compileable_package(
         in asset_types_content
     )
     assert "CogniteAssetIncludeProperty: TypeAlias = Literal[" in asset_types_content
+    assert "CogniteAssetSortProperty: TypeAlias = Literal[" in asset_types_content
+    sort_section = asset_types_content.split("CogniteAssetSort = TypedDict(")[1]
+    for field in (
+        "externalId",
+        "space",
+        "name",
+        "parent",
+        "class",
+        "equipment",
+    ):
+        assert f'"{field}": SORT_DIRECTION' in sort_section
+    assert '"aliases": SORT_DIRECTION' not in sort_section
+    assert '"path": SORT_DIRECTION' not in sort_section
+    assert '"createdTime": SORT_DIRECTION' not in sort_section
+    assert '"lastUpdatedTime": SORT_DIRECTION' not in sort_section
+    assert "CogniteAssetSort = TypedDict(" in asset_types_content
+    assert "total=False" in sort_section
     assert '"parent"' in asset_types_content
     assert '"equipment"' in asset_types_content
     assert '"path"' in asset_types_content
