@@ -131,7 +131,7 @@ generated/
 | `view_mapper.py` | `VIEW_MAPPER_CACHE` built from dumped views (omit with `--no-view-mapper-cache`) |
 | `{view}/models.py` | `{View}` (writable model) and `{View}Aggregation` (aggregation model) |
 | `{view}/filters.py` | `{View}Filter` typed dict with one key per filterable property |
-| `{view}/types.py` | Literal types: `{View}QueryProperty`, `{View}FilterProperty`, `{View}GroupByProperty`, `{View}AggregationProperty` |
+| `{view}/types.py` | Literal types: `{View}QueryProperty`, `{View}FilterProperty`, `{View}GroupByProperty`, `{View}AggregationProperty`, `{View}SortProperty`, plus `{View}Sort` |
 | `{view}/client.py` | `{View}Client(ViewClient)` with typed overloads for every method |
 
 ---

@@ -152,6 +152,10 @@ page = client.cognite_asset.query(
         "name": {"prefix": "Pump"},
     },
     include=["parent", "type"],
+    sort={
+        "name": "ascending",
+        "externalId": "descending",
+    },
     limit=100,
 )
 
@@ -181,6 +185,10 @@ assets = client.cognite_asset.query_all_pages(
 
 `include` controls relation loading. Relation fields not included are excluded
 from the generated query to avoid unnecessary traversal.
+
+`sort` is a `{View}Sort` typed dict. Keys are sortable fields (`{View}SortProperty`:
+identity fields and non-list mapped properties). Values are `"ascending"` or
+`"descending"`. Multiple keys are applied in insertion order.
 
 ---
 

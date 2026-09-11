@@ -23,10 +23,19 @@ _TFilter = TypeVar("_TFilter", bound=Mapping[str, Any])
 _TQueryProperty = TypeVar("_TQueryProperty", bound=str)
 _TGroupBy = TypeVar("_TGroupBy", bound=str)
 _TAggregationProperty = TypeVar("_TAggregationProperty", bound=str)
+_TSort = TypeVar("_TSort", bound=Mapping[str, Any])
 
 
 class ViewClient(
-    Generic[_T, _TAgg, _TFilter, _TQueryProperty, _TGroupBy, _TAggregationProperty]
+    Generic[
+        _T,
+        _TAgg,
+        _TFilter,
+        _TQueryProperty,
+        _TGroupBy,
+        _TAggregationProperty,
+        _TSort,
+    ]
 ):
     def __init__(
         self,
@@ -122,6 +131,7 @@ class ViewClient(
         self,
         filters: _TFilter | None = None,
         *,
+        sort: _TSort | None = None,
         limit: int = 1000,
         cursor: str | None = None,
     ) -> PaginatedResult[_T]:
@@ -129,6 +139,7 @@ class ViewClient(
             build_query_statement(
                 self._entity_cls,
                 filters,
+                sort=sort,
                 limit=limit,
                 cursor=cursor,
             )
@@ -138,6 +149,7 @@ class ViewClient(
         self,
         filters: _TFilter | None = None,
         *,
+        sort: _TSort | None = None,
         limit: int = 1000,
         cursor: str | None = None,
     ) -> PaginatedResult[_T]:
@@ -145,6 +157,7 @@ class ViewClient(
             build_query_statement(
                 self._entity_cls,
                 filters,
+                sort=sort,
                 limit=limit,
                 cursor=cursor,
             )
@@ -154,20 +167,22 @@ class ViewClient(
         self,
         filters: _TFilter | None = None,
         *,
+        sort: _TSort | None = None,
         limit: int = 1000,
     ) -> list[_T]:
         return self._engine.query_all_pages(
-            build_query_statement(self._entity_cls, filters, limit=limit)
+            build_query_statement(self._entity_cls, filters, sort=sort, limit=limit)
         )
 
     async def query_all_pages_async(
         self,
         filters: _TFilter | None = None,
         *,
+        sort: _TSort | None = None,
         limit: int = 1000,
     ) -> list[_T]:
         return await self._engine.query_all_pages_async(
-            build_query_statement(self._entity_cls, filters, limit=limit)
+            build_query_statement(self._entity_cls, filters, sort=sort, limit=limit)
         )
 
     def upsert(
