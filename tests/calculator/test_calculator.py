@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+import asyncio
 from datetime import UTC, datetime
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from cognite.client.data_classes.datapoint_aggregates import Aggregate
@@ -155,9 +156,29 @@ def _make_datapoints_list(
 
 
 def _client_returning(raw: list[Datapoints]) -> MagicMock:
+    retrieve = AsyncMock(return_value=raw)
     client = MagicMock()
-    client.time_series.data.retrieve.return_value = raw
+    client.time_series.data.retrieve = retrieve
+    client.get_async_client.return_value = client
     return client
+
+
+def _calculate(
+    calc: Calculator,
+    query: CalculatorQuery,
+    start: datetime,
+    end: datetime,
+) -> CalculationResult:
+    return asyncio.run(calc.calculate(query, start, end))
+
+
+def _calculate_multiples(
+    calc: Calculator,
+    queries: list[CalculatorQuery],
+    start: datetime,
+    end: datetime,
+) -> list[CalculationResult]:
+    return asyncio.run(calc.calculate_multiples(queries, start, end))
 
 
 def _make_aggregate_datapoints_list(
@@ -191,7 +212,7 @@ def test_calculate_returns_evaluation_result_for_simple_formula() -> None:
     raw = _make_datapoints_list({("s", "ts1"): [1.0, 2.0, 3.0]})
 
     calc = Calculator(_client_returning(raw))
-    result = calc.calculate(_make_query("{A} * 2", [param]), _START, _END)
+    result = _calculate(calc, _make_query("{A} * 2", [param]), _START, _END)
 
     assert [dp.value for dp in result.datapoints] == [2.0, 4.0, 6.0]
 
@@ -201,8 +222,8 @@ def test_calculate_rolling_average_keeps_input_alignment() -> None:
     raw = _make_datapoints_list({("s", "ts1"): [10.0, 20.0, 30.0, 40.0]})
 
     calc = Calculator(_client_returning(raw))
-    result = calc.calculate(
-        _make_query("rolling_average({A}, 3)", [param]), _START, _END
+    result = _calculate(
+        calc, _make_query("rolling_average({A}, 3)", [param]), _START, _END
     )
 
     assert [dp.value for dp in result.datapoints] == [10.0, 15.0, 20.0, 30.0]
@@ -218,8 +239,8 @@ def test_calculate_rolling_average_minus_second_series_stays_aligned() -> None:
     )
 
     calc = Calculator(_client_returning(raw))
-    result = calc.calculate(
-        _make_query("rolling_average({A}, 3) - {B}", [p_a, p_b]), _START, _END
+    result = _calculate(
+        calc, _make_query("rolling_average({A}, 3) - {B}", [p_a, p_b]), _START, _END
     )
 
     assert [dp.value for dp in result.datapoints] == [9.0, 13.0, 17.0, 26.0]
@@ -235,7 +256,7 @@ def test_calculate_passes_window_to_client() -> None:
     raw = _make_datapoints_list({("s", "x"): [5.0]})
 
     client = _client_returning(raw)
-    Calculator(client).calculate(_make_query("{A}", [param]), _START, _END)
+    _calculate(Calculator(client), _make_query("{A}", [param]), _START, _END)
 
     dp_query = client.time_series.data.retrieve.call_args.kwargs["instance_id"][0]
     assert dp_query.start == _START
@@ -251,7 +272,7 @@ def test_calculate_multi_parameter_formula() -> None:
     )
 
     calc = Calculator(_client_returning(raw))
-    result = calc.calculate(_make_query("{A} / {B}", [p_a, p_b]), _START, _END)
+    result = _calculate(calc, _make_query("{A} / {B}", [p_a, p_b]), _START, _END)
 
     assert [dp.value for dp in result.datapoints] == [5.0, 5.0]
 
@@ -261,7 +282,7 @@ def test_calculate_with_aggregate_passes_granularity_in_query() -> None:
     raw = _make_aggregate_datapoints_list(("s", "x"), "average", [10.0, 20.0])
 
     client = _client_returning(raw)
-    Calculator(client).calculate(_make_query("{A}", [param]), _START, _END)
+    _calculate(Calculator(client), _make_query("{A}", [param]), _START, _END)
 
     queries_arg = client.time_series.data.retrieve.call_args.kwargs["instance_id"]
     assert queries_arg[0].granularity == "1h"
@@ -272,7 +293,7 @@ def test_calculate_non_aggregate_parameter_has_no_granularity_in_query() -> None
     raw = _make_datapoints_list({("s", "x"): [1.0]})
 
     client = _client_returning(raw)
-    Calculator(client).calculate(_make_query("{A}", [param]), _START, _END)
+    _calculate(Calculator(client), _make_query("{A}", [param]), _START, _END)
 
     queries_arg = client.time_series.data.retrieve.call_args.kwargs["instance_id"]
     assert queries_arg[0].granularity is None
@@ -285,7 +306,7 @@ def test_calculate_returns_empty_result_when_data_missing_for_parameter() -> Non
     # A timeseries with no data in the window is treated as an empty series
     calc = Calculator(_client_returning(raw))
     query = _make_query("{A}", [param])
-    result = calc.calculate(query, _START, _END)
+    result = _calculate(calc, query, _START, _END)
     assert result == CalculationResult(query=query, datapoints=[], inputs={"A": []})
 
 
@@ -304,7 +325,7 @@ def test_calculate_deduplicates_identical_parameter_requests() -> None:
     client = _client_returning(raw)
     calc = Calculator(client)
 
-    result = calc.calculate(_make_query("{A} + {B}", [p1, p2]), _START, _END)
+    result = _calculate(calc, _make_query("{A} + {B}", [p1, p2]), _START, _END)
 
     assert client.time_series.data.retrieve.call_count == 1
     queries_arg = client.time_series.data.retrieve.call_args.kwargs["instance_id"]
@@ -321,7 +342,7 @@ def test_calculate_raises_on_non_numeric_values_in_window() -> None:
     calc = Calculator(_client_returning(raw))
 
     with pytest.raises(ParameterError, match="parameter 'A' must be a numeric"):
-        calc.calculate(_make_query("{A}", [param]), _START, _END)
+        _calculate(calc, _make_query("{A}", [param]), _START, _END)
 
 
 # ---------------------------------------------------------------------------
@@ -338,7 +359,8 @@ def test_calculate_multiples_returns_one_result_per_query() -> None:
     )
     calc = Calculator(_client_returning(raw))
 
-    results = calc.calculate_multiples(
+    results = _calculate_multiples(
+        calc,
         [_make_query("{A} * 2", [p_a]), _make_query("{B} + 1", [p_b])],
         _START,
         _END,
@@ -355,7 +377,8 @@ def test_calculate_multiples_batches_into_single_api_call() -> None:
 
     raw = _make_datapoints_list({("s", "ts_a"): [1.0], ("s", "ts_b"): [2.0]})
     client = _client_returning(raw)
-    Calculator(client).calculate_multiples(
+    _calculate_multiples(
+        Calculator(client),
         [_make_query("{A}", [p_a]), _make_query("{B}", [p_b])],
         _START,
         _END,
@@ -374,7 +397,8 @@ def test_calculate_multiples_deduplicates_shared_timeseries_across_queries() -> 
 
     raw = _make_datapoints_list({("s", "ts_shared"): [5.0, 10.0]})
     client = _client_returning(raw)
-    results = Calculator(client).calculate_multiples(
+    results = _calculate_multiples(
+        Calculator(client),
         [_make_query("{A} * 2", [p_a]), _make_query("{B} + 1", [p_b])],
         _START,
         _END,
@@ -388,7 +412,7 @@ def test_calculate_multiples_deduplicates_shared_timeseries_across_queries() -> 
 
 def test_calculate_multiples_empty_queries_returns_empty_list() -> None:
     client = MagicMock()
-    results = Calculator(client).calculate_multiples([], _START, _END)
+    results = _calculate_multiples(Calculator(client), [], _START, _END)
 
     assert results == []
 
@@ -405,8 +429,8 @@ def test_calculate_broadcasts_constant_parameter_to_series_length() -> None:
     raw = _make_datapoints_list({("s", "ts_a"): [1.0, 2.0, 3.0]})
     calc = Calculator(_client_returning(raw))
 
-    result = calc.calculate(
-        _make_query("{A} + {B}", [ts_param, const_param]), _START, _END
+    result = _calculate(
+        calc, _make_query("{A} + {B}", [ts_param, const_param]), _START, _END
     )
 
     assert [dp.value for dp in result.datapoints] == [11.0, 12.0, 13.0]
@@ -419,8 +443,8 @@ def test_calculate_broadcasts_constant_onto_intersected_timestamps() -> None:
     raw = _make_datapoints_list({("s", "ts_a"): [1.0, 2.0, 3.0], ("s", "ts_b"): [10.0]})
     calc = Calculator(_client_returning(raw))
 
-    result = calc.calculate(
-        _make_query("{A} + {B} + {C}", [ts_a, ts_b, const]), _START, _END
+    result = _calculate(
+        calc, _make_query("{A} + {B} + {C}", [ts_a, ts_b, const]), _START, _END
     )
 
     assert [dp.value for dp in result.datapoints] == [111.0]
@@ -433,8 +457,8 @@ def test_calculate_constant_parameter_can_precede_timeseries_parameter() -> None
     raw = _make_datapoints_list({("s", "ts_a"): [1.0, 2.0]})
     calc = Calculator(_client_returning(raw))
 
-    result = calc.calculate(
-        _make_query("{A} * {B}", [const_param, ts_param]), _START, _END
+    result = _calculate(
+        calc, _make_query("{A} * {B}", [const_param, ts_param]), _START, _END
     )
 
     assert [dp.value for dp in result.datapoints] == [2.0, 4.0]
@@ -451,7 +475,7 @@ def test_calculate_all_constant_formula_raises_missing_time_axis() -> None:
     query = _make_query("{A} * 2", [const_param])
 
     with pytest.raises(MissingTimeAxisError, match="no time-series parameter"):
-        calc.calculate(query, _START, _END)
+        _calculate(calc, query, _START, _END)
 
 
 def test_missing_time_axis_error_lists_every_constant_alias() -> None:
@@ -465,7 +489,7 @@ def test_missing_time_axis_error_lists_every_constant_alias() -> None:
     )
 
     with pytest.raises(MissingTimeAxisError) as exc_info:
-        calc.calculate(query, _START, _END)
+        _calculate(calc, query, _START, _END)
 
     assert exc_info.value.aliases == ("A", "B")
 
@@ -495,7 +519,7 @@ def test_calculate_reduces_multiple_timeseries_with_sum() -> None:
     raw = [dp1, dp2]
 
     calc = Calculator(_client_returning(raw))
-    result = calc.calculate(_make_query("{A}", [param]), _START, _END)
+    result = _calculate(calc, _make_query("{A}", [param]), _START, _END)
 
     assert [dp.value for dp in result.datapoints] == [11.0, 22.0]
 
@@ -516,7 +540,7 @@ def test_calculate_reduces_multiple_timeseries_with_average() -> None:
     raw = [dp1, dp2]
 
     calc = Calculator(_client_returning(raw))
-    result = calc.calculate(_make_query("{A}", [param]), _START, _END)
+    result = _calculate(calc, _make_query("{A}", [param]), _START, _END)
 
     assert [dp.value for dp in result.datapoints] == [7.0]
 
@@ -544,7 +568,7 @@ def test_calculate_multi_instance_parameter_with_no_common_timestamps_is_empty()
 
     calc = Calculator(_client_returning(raw))
     query = _make_query("{A}", [param])
-    result = calc.calculate(query, _START, _END)
+    result = _calculate(calc, query, _START, _END)
 
     assert result == CalculationResult(query=query, datapoints=[], inputs={"A": []})
 
@@ -576,7 +600,7 @@ def test_calculate_timestamps_come_from_reduced_series_not_raw_leaf_series() -> 
     raw = [dp1, dp2, dp3]
 
     calc = Calculator(_client_returning(raw))
-    result = calc.calculate(_make_query("{A} + {B}", [multi, single]), _START, _END)
+    result = _calculate(calc, _make_query("{A} + {B}", [multi, single]), _START, _END)
 
     assert [dp.value for dp in result.datapoints] == [111.0]
 
@@ -616,8 +640,11 @@ def test_calculate_multiples_dedupes_shared_instance_across_multi_params() -> No
     ]
 
     client = _client_returning(series)
-    results = Calculator(client).calculate_multiples(
-        [_make_query("{A}", [p_a]), _make_query("{B}", [p_b])], _START, _END
+    results = _calculate_multiples(
+        Calculator(client),
+        [_make_query("{A}", [p_a]), _make_query("{B}", [p_b])],
+        _START,
+        _END,
     )
 
     queries_arg = client.time_series.data.retrieve.call_args.kwargs["instance_id"]
@@ -634,7 +661,8 @@ def test_calculate_multiples_honors_per_query_alignment() -> None:
     )
     calc = Calculator(_client_returning(raw))
 
-    intersected, strict = calc.calculate_multiples(
+    intersected, strict = _calculate_multiples(
+        calc,
         [
             _make_query("{A} + {B}", [p_a, p_b], alignment="intersect"),
             _make_query("{A} + {B}", [p_a, p_b], alignment="strict"),
@@ -654,7 +682,7 @@ def test_calculate_intersects_mismatched_series_by_default() -> None:
     raw = _make_datapoints_list({("s", "ts_a"): [1.0, 2.0, 3.0], ("s", "ts_b"): [10.0]})
     calc = Calculator(_client_returning(raw))
 
-    result = calc.calculate(_make_query("{A} + {B}", [p_a, p_b]), _START, _END)
+    result = _calculate(calc, _make_query("{A} + {B}", [p_a, p_b]), _START, _END)
 
     assert [dp.value for dp in result.datapoints] == [11.0]
 
@@ -672,7 +700,7 @@ def test_calculate_intersects_same_length_series_with_different_timestamps() -> 
     )
     calc = Calculator(_client_returning(raw))
 
-    result = calc.calculate(_make_query("{A} + {B}", [p_a, p_b]), _START, _END)
+    result = _calculate(calc, _make_query("{A} + {B}", [p_a, p_b]), _START, _END)
 
     assert [dp.value for dp in result.datapoints] == [12.0]
     assert result.datapoints[0].timestamp == datetime.fromtimestamp(
@@ -702,8 +730,8 @@ def test_calculate_intersect_with_no_overlap_is_empty() -> None:
     dp3.average = [100.0]
 
     query = _make_query("{A} + {B}", [multi, single])
-    result = Calculator(_client_returning([dp1, dp2, dp3])).calculate(
-        query, _START, _END
+    result = _calculate(
+        Calculator(_client_returning([dp1, dp2, dp3])), query, _START, _END
     )
 
     assert result == CalculationResult(
@@ -719,7 +747,8 @@ def test_calculate_strict_alignment_raises_on_mismatched_series() -> None:
     calc = Calculator(_client_returning(raw))
 
     with pytest.raises(ParameterTimestampError, match="timestamp mismatch"):
-        calc.calculate(
+        _calculate(
+            calc,
             _make_query("{A} + {B}", [p_a, p_b], alignment="strict"),
             _START,
             _END,
@@ -742,7 +771,8 @@ def test_calculate_strict_alignment_raises_when_same_length_but_different_times(
     calc = Calculator(_client_returning(raw))
 
     with pytest.raises(ParameterTimestampError, match="timestamp mismatch"):
-        calc.calculate(
+        _calculate(
+            calc,
             _make_query("{A} + {B}", [p_a, p_b], alignment="strict"),
             _START,
             _END,
@@ -759,8 +789,8 @@ def test_calculate_multiple_constants_never_reach_the_cdf_client() -> None:
     client = _client_returning(raw)
     calc = Calculator(client)
 
-    result = calc.calculate(
-        _make_query("{A} + {B} + {C} + {D}", [a, b, c, ts]), _START, _END
+    result = _calculate(
+        calc, _make_query("{A} + {B} + {C} + {D}", [a, b, c, ts]), _START, _END
     )
 
     assert [dp.value for dp in result.datapoints] == [10.0, 10.0]
@@ -783,7 +813,8 @@ def test_calculate_multiples_multi_parameter_query() -> None:
     )
     calc = Calculator(_client_returning(raw))
 
-    results = calc.calculate_multiples(
+    results = _calculate_multiples(
+        calc,
         [
             _make_query("{A} / {B}", [p_a, p_b]),
             _make_query("{C} * 3", [p_c]),
@@ -806,7 +837,7 @@ def test_calculate_inputs_are_the_series_passed_to_the_formula() -> None:
     raw = _make_datapoints_list({("s", "ts1"): [1.0, 2.0, 3.0]})
 
     calc = Calculator(_client_returning(raw))
-    result = calc.calculate(_make_query("{A} * 2", [param]), _START, _END)
+    result = _calculate(calc, _make_query("{A} * 2", [param]), _START, _END)
 
     assert _input_values(result) == {"A": [1.0, 2.0, 3.0]}
     assert [dp.value for dp in result.datapoints] == [2.0, 4.0, 6.0]
@@ -821,25 +852,12 @@ def test_calculate_inputs_include_every_parameter_at_aligned_indexes() -> None:
     )
     calc = Calculator(_client_returning(raw))
 
-    result = calc.calculate(_make_query("{A} / {B}", [p_a, p_b]), _START, _END)
+    result = _calculate(calc, _make_query("{A} / {B}", [p_a, p_b]), _START, _END)
 
     assert _input_values(result) == {"A": [10.0, 20.0], "B": [2.0, 4.0]}
     for i, dp in enumerate(result.datapoints):
         assert dp.value == result.inputs["A"][i].value / result.inputs["B"][i].value
     _assert_inputs_share_result_timestamps(result)
-
-
-def test_calculate_skips_building_inputs_when_include_inputs_is_false() -> None:
-    param = _make_param("A", external_id="ts1")
-    raw = _make_datapoints_list({("s", "ts1"): [1.0, 2.0, 3.0]})
-
-    calc = Calculator(_client_returning(raw))
-    result = calc.calculate(
-        _make_query("{A} * 2", [param]), _START, _END, include_inputs=False
-    )
-
-    assert result.inputs == {}
-    assert [dp.value for dp in result.datapoints] == [2.0, 4.0, 6.0]
 
 
 def test_calculate_inputs_are_the_intersected_values_not_the_raw_series() -> None:
@@ -848,7 +866,7 @@ def test_calculate_inputs_are_the_intersected_values_not_the_raw_series() -> Non
     raw = _make_datapoints_list({("s", "ts_a"): [1.0, 2.0, 3.0], ("s", "ts_b"): [10.0]})
     calc = Calculator(_client_returning(raw))
 
-    result = calc.calculate(_make_query("{A} + {B}", [p_a, p_b]), _START, _END)
+    result = _calculate(calc, _make_query("{A} + {B}", [p_a, p_b]), _START, _END)
 
     # Only the shared timestamp survives alignment, so inputs drop A's extra points.
     assert _input_values(result) == {"A": [1.0], "B": [10.0]}
@@ -862,8 +880,8 @@ def test_calculate_inputs_broadcast_constants_to_the_aligned_length() -> None:
     raw = _make_datapoints_list({("s", "ts_a"): [1.0, 2.0, 3.0]})
     calc = Calculator(_client_returning(raw))
 
-    result = calc.calculate(
-        _make_query("{A} + {B}", [ts_param, const_param]), _START, _END
+    result = _calculate(
+        calc, _make_query("{A} + {B}", [ts_param, const_param]), _START, _END
     )
 
     assert _input_values(result) == {
@@ -892,7 +910,7 @@ def test_calculate_inputs_use_the_reduced_series_for_multi_timeseries() -> None:
     dp2.average = [10.0, 20.0]
 
     calc = Calculator(_client_returning([dp1, dp2]))
-    result = calc.calculate(_make_query("{A}", [param]), _START, _END)
+    result = _calculate(calc, _make_query("{A}", [param]), _START, _END)
 
     assert _input_values(result) == {"A": [11.0, 22.0]}
     assert [dp.value for dp in result.datapoints] == [11.0, 22.0]
@@ -907,7 +925,8 @@ def test_calculate_multiples_inputs_are_scoped_to_each_query() -> None:
     )
     calc = Calculator(_client_returning(raw))
 
-    results = calc.calculate_multiples(
+    results = _calculate_multiples(
+        calc,
         [_make_query("{A} * 2", [p_a]), _make_query("{B} + 1", [p_b])],
         _START,
         _END,

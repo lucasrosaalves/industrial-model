@@ -33,24 +33,22 @@ _FORMULA_PREVIEW = 80
 
 class Calculator:
     def __init__(self, cognite_client: CogniteClient) -> None:
-        self._retriever = DatapointsRetriever(cognite_client)
+        self._retriever = DatapointsRetriever(cognite_client.get_async_client())
         self._series_reducer = SeriesReducer()
 
-    def calculate(
+    async def calculate(
         self,
         query: CalculatorQuery,
         start: datetime,
         end: datetime,
-        include_inputs: bool = True,
     ) -> CalculationResult:
-        return self.calculate_multiples([query], start, end, include_inputs)[0]
+        return (await self.calculate_multiples([query], start, end))[0]
 
-    def calculate_multiples(
+    async def calculate_multiples(
         self,
         queries: list[CalculatorQuery],
         start: datetime,
         end: datetime,
-        include_inputs: bool = True,
     ) -> list[CalculationResult]:
         timer = StageTimer() if logger.isEnabledFor(logging.DEBUG) else None
         ok = False
@@ -69,7 +67,7 @@ class Calculator:
                 for parameter in query.parameters
                 if isinstance(parameter, TimeSeriesParameterBase)
             ]
-            leaf_series_by_parameter = self._retriever.retrieve_datapoints(
+            leaf_series_by_parameter = await self._retriever.retrieve_datapoints(
                 ts_parameters, start, end, timer=timer
             )
 
@@ -81,7 +79,6 @@ class Calculator:
                         query,
                         leaf_series_by_parameter[offset : offset + count],
                         timer,
-                        include_inputs,
                     )
                 )
                 offset += count
@@ -96,7 +93,6 @@ class Calculator:
         query: CalculatorQuery,
         leaf_series_by_parameter: list[list[Series]],
         timer: StageTimer | None = None,
-        include_inputs: bool = True,
     ) -> CalculationResult:
         it = iter(leaf_series_by_parameter)
         ts_aliases: list[str] = []
@@ -140,18 +136,15 @@ class Calculator:
             values = evaluate(query.formula, values_map)
 
         with timed(timer, "assemble"):
-            inputs: dict[str, list[DataPoint]] = {}
-            if include_inputs:
-                inputs = {
-                    alias: _to_datapoints(series)
-                    for alias, series in zip(ts_aliases, ts_series, strict=True)
-                }
-                for parameter in query.parameters:
-                    if isinstance(parameter, ConstantParameter):
-                        inputs[parameter.alias] = [
-                            DataPoint(timestamp=ts, value=parameter.value)
-                            for ts in timestamps
-                        ]
+            inputs = {
+                alias: _to_datapoints(series)
+                for alias, series in zip(ts_aliases, ts_series, strict=True)
+            }
+            for parameter in query.parameters:
+                if isinstance(parameter, ConstantParameter):
+                    inputs[parameter.alias] = [
+                        DataPoint(ts, parameter.value) for ts in timestamps
+                    ]
             result = CalculationResult(
                 query=query,
                 datapoints=_to_datapoints(zip(timestamps, values, strict=True)),
@@ -177,7 +170,7 @@ def _formula_preview(formula: str) -> str:
 
 
 def _to_datapoints(series: Iterable[tuple[datetime, float]]) -> list[DataPoint]:
-    return [DataPoint(timestamp=ts, value=value) for ts, value in series]
+    return list(map(DataPoint._make, series))
 
 
 def _align_series(

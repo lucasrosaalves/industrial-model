@@ -42,6 +42,7 @@ file repeatedly against the same project is safe.
 
 from __future__ import annotations
 
+import asyncio
 import os
 import uuid
 from collections.abc import Iterator
@@ -57,6 +58,7 @@ from cognite.client.data_classes.data_modeling.ids import NodeId
 from dotenv import load_dotenv
 
 from industrial_model.calculator import (
+    CalculationResult,
     Calculator,
     CalculatorQuery,
     ConstantParameter,
@@ -120,6 +122,24 @@ def client() -> CogniteClient:
 @pytest.fixture(scope="module")
 def calculator(client: CogniteClient) -> Calculator:
     return Calculator(client)
+
+
+def _calculate(
+    calculator: Calculator,
+    query: CalculatorQuery,
+    start: datetime,
+    end: datetime,
+) -> CalculationResult:
+    return asyncio.run(calculator.calculate(query, start, end))
+
+
+def _calculate_multiples(
+    calculator: Calculator,
+    queries: list[CalculatorQuery],
+    start: datetime,
+    end: datetime,
+) -> list[CalculationResult]:
+    return asyncio.run(calculator.calculate_multiples(queries, start, end))
 
 
 @pytest.fixture(scope="module")
@@ -260,7 +280,7 @@ def test_simple_raw_arithmetic(calculator: Calculator, dataset: _Dataset) -> Non
         ],
     )
 
-    result = calculator.calculate(query, _WINDOW_START, _WINDOW_END)
+    result = _calculate(calculator, query, _WINDOW_START, _WINDOW_END)
 
     assert [dp.value for dp in result.datapoints] == pytest.approx(
         [90.0, 110.0, 115.0, 110.0, 138.0]
@@ -281,7 +301,7 @@ def test_guarded_division_handles_a_real_zero_denominator(
         ],
     )
 
-    result = calculator.calculate(query, _WINDOW_START, _WINDOW_END)
+    result = _calculate(calculator, query, _WINDOW_START, _WINDOW_END)
 
     assert [dp.value for dp in result.datapoints] == pytest.approx(
         [10.0, -1.0, 24.0, 6.5, 70.0]
@@ -301,7 +321,7 @@ def test_mismatched_series_are_intersected_by_default(
         ],
     )
 
-    result = calculator.calculate(query, _WINDOW_START, _WINDOW_END)
+    result = _calculate(calculator, query, _WINDOW_START, _WINDOW_END)
 
     assert [dp.value for dp in result.datapoints] == pytest.approx(
         [101.0, 112.0, 123.0]
@@ -323,7 +343,7 @@ def test_strict_alignment_raises_when_series_timestamps_differ(
     )
 
     with pytest.raises(ParameterTimestampError):
-        calculator.calculate(query, _WINDOW_START, _WINDOW_END)
+        _calculate(calculator, query, _WINDOW_START, _WINDOW_END)
 
 
 def test_strict_alignment_accepts_identically_bucketed_aggregates(
@@ -354,7 +374,7 @@ def test_strict_alignment_accepts_identically_bucketed_aggregates(
         alignment="strict",
     )
 
-    result = calculator.calculate(query, _WINDOW_START, _WINDOW_END)
+    result = _calculate(calculator, query, _WINDOW_START, _WINDOW_END)
 
     assert [dp.value for dp in result.datapoints] == pytest.approx([300.0, 320.0])
 
@@ -369,7 +389,7 @@ def test_timeseries_with_no_datapoints_returns_empty_result(
         ],
     )
 
-    result = calculator.calculate(query, _WINDOW_START, _WINDOW_END)
+    result = _calculate(calculator, query, _WINDOW_START, _WINDOW_END)
 
     assert result.datapoints == []
 
@@ -387,7 +407,7 @@ def test_intersect_with_an_empty_series_is_empty(
         ],
     )
 
-    result = calculator.calculate(query, _WINDOW_START, _WINDOW_END)
+    result = _calculate(calculator, query, _WINDOW_START, _WINDOW_END)
 
     assert result.datapoints == []
 
@@ -406,7 +426,7 @@ def test_window_with_no_data_returns_empty_result(
     start = _BASE - timedelta(days=30)
     end = start + timedelta(hours=3)
 
-    result = calculator.calculate(query, start, end)
+    result = _calculate(calculator, query, start, end)
 
     assert result.datapoints == []
 
@@ -441,7 +461,7 @@ def test_single_aggregate_hourly_average(
         ],
     )
 
-    result = calculator.calculate(query, _WINDOW_START, _WINDOW_END)
+    result = _calculate(calculator, query, _WINDOW_START, _WINDOW_END)
 
     assert [dp.value for dp in result.datapoints] == pytest.approx(
         [50.0, 70.0], rel=0.05
@@ -481,7 +501,7 @@ def test_two_aggregates_of_one_series_share_a_merged_request(
         ],
     )
 
-    result = calculator.calculate(query, _WINDOW_START, _WINDOW_END)
+    result = _calculate(calculator, query, _WINDOW_START, _WINDOW_END)
 
     assert [dp.value for dp in result.datapoints] == pytest.approx([460.0])
 
@@ -509,7 +529,7 @@ def test_one_series_read_both_raw_and_aggregated(
         ],
     )
 
-    result = calculator.calculate(query, _WINDOW_START, _WINDOW_END)
+    result = _calculate(calculator, query, _WINDOW_START, _WINDOW_END)
 
     assert [dp.value for dp in result.datapoints] == pytest.approx([700.0])
     assert result.datapoints[0].timestamp == _BASE
@@ -528,7 +548,7 @@ def test_constant_parameter_broadcasts_against_a_real_series(
         ],
     )
 
-    result = calculator.calculate(query, _WINDOW_START, _WINDOW_END)
+    result = _calculate(calculator, query, _WINDOW_START, _WINDOW_END)
 
     expected = [v * 0.453592 for v in [100.0, 110.0, 120.0, 130.0, 140.0]]
     assert [dp.value for dp in result.datapoints] == pytest.approx(expected)
@@ -563,7 +583,7 @@ def test_multi_timeseries_reducer_against_real_hourly_aggregates(
     )
     query = CalculatorQuery(formula="{LINES}", parameters=[lines])
 
-    result = calculator.calculate(query, _WINDOW_START, _WINDOW_END)
+    result = _calculate(calculator, query, _WINDOW_START, _WINDOW_END)
 
     # 3-hour window but only hours 0 and 1 have raw data; CDF must omit the
     # empty trailing bucket rather than returning a null/zero for it.
@@ -594,7 +614,7 @@ def test_multi_timeseries_reducer_drops_buckets_missing_from_any_series(
     )
     query = CalculatorQuery(formula="{GAP}", parameters=[gap_param])
 
-    result = calculator.calculate(query, _WINDOW_START, _WINDOW_END)
+    result = _calculate(calculator, query, _WINDOW_START, _WINDOW_END)
 
     assert len(result.datapoints) == 1, (
         "Expected only the second hourly bucket to survive (gap_b has no "
@@ -630,7 +650,7 @@ def test_formula_intersects_reduced_series_with_a_gapped_sibling(
     )
     query = CalculatorQuery(formula="{LINES} + {GAP}", parameters=[lines, gap])
 
-    result = calculator.calculate(query, _WINDOW_START, _WINDOW_END)
+    result = _calculate(calculator, query, _WINDOW_START, _WINDOW_END)
 
     assert len(result.datapoints) == 1, (
         "Expected only the hour where LINES and GAP overlap; "
@@ -662,7 +682,7 @@ def test_complex_formula_combining_reducer_and_constants(
         parameters=[lines_kg, kg_to_lbs, target],
     )
 
-    result = calculator.calculate(query, _WINDOW_START, _WINDOW_END)
+    result = _calculate(calculator, query, _WINDOW_START, _WINDOW_END)
 
     expected = [(v * 2.20462 / 1000.0) * 100 for v in [600.0, 630.0]]
     assert [dp.value for dp in result.datapoints] == pytest.approx(expected)
@@ -676,9 +696,9 @@ def test_chunked_requests_keep_each_series_on_its_own_alias(
     ``_build_requests`` hands back positional indexes into a flat response
     list, so a reordered (or differently chunked) CDF response would silently
     attach every value to the wrong parameter. Shrinking the chunk size
-    splits four out-of-order series across two round trips, exercising both
-    within-chunk and across-chunk ordering without having to provision the
-    100+ instances the real limit would need.
+    splits four out-of-order series across two concurrent requests, exercising
+    both within-chunk and across-chunk ordering without having to provision
+    the 100+ instances the real limit would need.
 
     Each alias is scaled by a different power of ten, so any permutation
     produces a different number.
@@ -695,7 +715,7 @@ def test_chunked_requests_keep_each_series_on_its_own_alias(
         ],
     )
 
-    result = calculator.calculate(query, _WINDOW_START, _WINDOW_END)
+    result = _calculate(calculator, query, _WINDOW_START, _WINDOW_END)
 
     # minute 15: 300*1000 + 100*100 + 5*10 + 200
     # minute 75: 310*1000 + 110*100 + 6*10 + 210
@@ -742,8 +762,11 @@ def test_calculate_multiples_batches_real_queries_together(
         ],
     )
 
-    simple_result, aggregate_result, reducer_result = calculator.calculate_multiples(
-        [simple_query, aggregate_query, reducer_query], _WINDOW_START, _WINDOW_END
+    simple_result, aggregate_result, reducer_result = _calculate_multiples(
+        calculator,
+        [simple_query, aggregate_query, reducer_query],
+        _WINDOW_START,
+        _WINDOW_END,
     )
 
     assert [dp.value for dp in simple_result.datapoints] == pytest.approx(

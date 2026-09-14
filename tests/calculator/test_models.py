@@ -1,11 +1,16 @@
 from __future__ import annotations
 
+from dataclasses import FrozenInstanceError
+from datetime import UTC, datetime
+
 import pytest
-from pydantic import ValidationError
+from pydantic import BaseModel, ValidationError
 
 from industrial_model.calculator.models import (
+    CalculationResult,
     CalculatorQuery,
     ConstantParameter,
+    DataPoint,
     MultiTimeSeriesParameter,
     ReducerType,
     TimeSeriesParameter,
@@ -348,3 +353,35 @@ def test_calculator_query_rejects_unknown_alignment() -> None:
             parameters=[ConstantParameter(alias="A", value=1.0)],
             alignment="union",  # type: ignore[arg-type]
         )
+
+
+# ---------------------------------------------------------------------------
+# DataPoint / CalculationResult (hot-path output types)
+# ---------------------------------------------------------------------------
+
+
+def test_datapoint_is_a_namedtuple() -> None:
+    ts = datetime(2024, 1, 1, tzinfo=UTC)
+    point = DataPoint(ts, 1.5)
+
+    assert isinstance(point, tuple)
+    assert DataPoint._fields == ("timestamp", "value")
+    assert not isinstance(point, BaseModel)
+    assert point.timestamp is ts
+    assert point.value == 1.5
+    unpacked_ts, unpacked_value = point
+    assert unpacked_ts is ts
+    assert unpacked_value == 1.5
+
+
+def test_calculation_result_is_a_frozen_dataclass() -> None:
+    query = CalculatorQuery(
+        formula="{A}", parameters=[ConstantParameter(alias="A", value=1.0)]
+    )
+    result = CalculationResult(query=query, datapoints=[])
+
+    assert not isinstance(result, BaseModel)
+    assert result.inputs == {}
+    assert result == CalculationResult(query=query, datapoints=[], inputs={})
+    with pytest.raises(FrozenInstanceError):
+        result.datapoints = []  # type: ignore[misc]

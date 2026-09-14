@@ -4,7 +4,7 @@ The `industrial_model.calculator` package computes derived time series from raw 
 
 It's built from three layers:
 
-- **`Calculator`** — the CDF-facing layer. Resolves `CalculatorQuery` objects into datapoint requests, retrieves and deduplicates them via `CogniteClient`, and evaluates the formula over the results.
+- **`Calculator`** — the CDF-facing layer. Resolves `CalculatorQuery` objects into datapoint requests, retrieves and deduplicates them concurrently via the async CDF client, and evaluates the formula over the results. `calculate` and `calculate_multiples` are async.
 - **`DatapointsRetriever` / `SeriesReducer`** — build deduplicated CDF requests per unique (time series, aggregate, granularity), and combine multiple time series into one when a parameter references more than one.
 - **`formula_expression.evaluate`** — a standalone, CDF-free formula engine. It compiles a small, safe arithmetic expression language (a restricted subset of Python) to an AST and evaluates it over plain numeric sequences. It has no dependency on `Calculator` and can be used on its own for testing or non-CDF data.
 
@@ -30,7 +30,7 @@ from industrial_model.calculator import Calculator, CalculatorQuery, TimeSeriesP
 from industrial_model.models import InstanceId
 
 client = CogniteClient()
-calculator = Calculator(client)
+calculator = Calculator(client)  # uses client.get_async_client() for CDF retrieve
 
 query = CalculatorQuery(
     formula="{PRODUCED} - {SCRAP}",
@@ -49,7 +49,7 @@ query = CalculatorQuery(
 end = datetime.now(tz=UTC)
 start = end - timedelta(days=1)
 
-result = calculator.calculate(query, start, end)
+result = await calculator.calculate(query, start, end)
 # result.query:      CalculatorQuery  (the query that produced this result)
 # result.datapoints: list[DataPoint], each with .timestamp: datetime and .value: float
 # result.inputs:     dict[str, list[DataPoint]] — aligned series used by the formula, keyed by alias
@@ -61,21 +61,14 @@ for dp in result.datapoints:
 
 `result.query` is the exact `CalculatorQuery` that was passed in — handy when matching results back to their originating query after `calculate_multiples`. `result.inputs` is the aligned series that the formula actually evaluated: after retrieval, any `MultiTimeSeriesParameter` reduction, timestamp alignment, and constant broadcast. Each input series is a `list[DataPoint]` sharing the same timestamps as `datapoints`; `inputs[alias][i]` is the point used to compute `datapoints[i]`. These series are already in memory at evaluation time, so returning them does not refetch from CDF.
 
-Both `calculate` and `calculate_multiples` accept an `include_inputs: bool = True` flag. Building `result.inputs` wraps every input series in `DataPoint` objects, which is pure overhead if you never read that field — pass `include_inputs=False` to skip it and get back an empty `inputs` dict. This has no effect on `datapoints`, only on `inputs`; nothing is fetched differently.
-
-```python
-result = calculator.calculate(query, start, end, include_inputs=False)
-# result.inputs == {}
-```
-
 Each `DataPoint.timestamp` comes from the **shared time axis** of the query's time-series parameters (`TimeSeriesParameter` or `MultiTimeSeriesParameter`). By default (`alignment="intersect"`) that axis is the **intersection** of their timestamps: a point is emitted only when every time-series parameter has a value at that exact timestamp. Set `alignment="strict"` to require identical timestamps and raise `ParameterTimestampError` if they differ. `ConstantParameter` values don't participate in this alignment — they are broadcast to the resulting length. See [Constants](#constants) and [Timestamp alignment](#timestamp-alignment) below.
 
 ### Batching multiple queries
 
-Use `calculate_multiples` when you need several formulas evaluated over the same window. All time-series parameters across all queries are fetched in a single retrieval pass, and identical time series requests (same instance id, aggregate, and granularity) are deduplicated to one CDF call, even across different queries:
+Use `calculate_multiples` when you need several formulas evaluated over the same window. All time-series parameters across all queries are fetched in one retrieval pass. Identical time series requests (same instance id, aggregate, and granularity) are deduplicated even across queries. Requests are then sent in chunks of 100 series (the CDF limit), and those chunks are fetched concurrently:
 
 ```python
-results = calculator.calculate_multiples(
+results = await calculator.calculate_multiples(
     [
         CalculatorQuery(formula="{A} + {B}", parameters=[param_a, param_b]),
         CalculatorQuery(formula="{A} * 2", parameters=[param_a]),  # {A} reused, not refetched
@@ -85,8 +78,6 @@ results = calculator.calculate_multiples(
 )
 # results[0], results[1] -> CalculationResult, one per input query, same order
 ```
-
-The same `include_inputs` flag applies here and skips assembling `inputs` for every result in the batch.
 
 ### Debug logs
 
@@ -99,7 +90,7 @@ logging.basicConfig()
 logging.getLogger("industrial_model.calculator").setLevel(logging.DEBUG)
 ```
 
-Each `calculate` / `calculate_multiples` call then logs a single-line stage breakdown (`build_requests`, `retrieve`, `parse`, `reduce`, `align`, `evaluate`, `assemble`) and names the bottleneck — the exclusive stage that took the longest. The summary is emitted even if the call fails (`status=error`). CDF retrieve is shared across all queries in a `calculate_multiples` batch, so it appears once in the summary. DEBUG also logs each CDF chunk and each query's formula, input lengths, and aligned point count.
+Each `calculate` / `calculate_multiples` call then logs a single-line stage breakdown (`build_requests`, `retrieve`, `parse`, `reduce`, `align`, `evaluate`, `assemble`) and names the bottleneck — the exclusive stage that took the longest. The summary is emitted even if the call fails (`status=error`). CDF retrieve is shared across all queries in a `calculate_multiples` batch, so it appears once in the summary. DEBUG also logs each CDF chunk (fetched concurrently when there are more than 100 unique series) and each query's formula, input lengths, and aligned point count.
 
 ---
 
@@ -130,8 +121,10 @@ from industrial_model.calculator import (
 | `ReducerType` | — | `Literal["min", "max", "sum", "average"]` | How multiple time series for one parameter are combined into one. |
 | `AlignmentMode` | — | `Literal["intersect", "strict"]` | How time-series parameters in a query are joined on time. Default is `"intersect"`. |
 | `CalculatorQuery` | — | `formula: str`, `parameters: list[CalculatorParameter]`, `alignment: AlignmentMode` (default `"intersect"`) | One query = one formula + the parameters it references. Every parameter's `alias` must be unique within the query — see below. `alignment` controls how time-series parameters are joined on time — see [Timestamp alignment](#timestamp-alignment). |
-| `DataPoint` | — | `timestamp: datetime`, `value: float` | A timestamped numeric value. Used both for the formula result (`datapoints`) and for each aligned input series. |
-| `CalculationResult` | — | `query: CalculatorQuery`, `datapoints: list[DataPoint]`, `inputs: dict[str, list[DataPoint]]` | Output of `Calculator.calculate`. `query` is the originating query; `datapoints` has one `DataPoint` per aligned index; `inputs` is the aligned parameter series the formula evaluated (`inputs[alias][i]` was used to compute `datapoints[i]`). |
+| `DataPoint` | — | `timestamp: datetime`, `value: float` | A `NamedTuple` timestamped numeric value. Used both for the formula result (`datapoints`) and for each aligned input series. Unpack as `ts, value = dp`. Not a Pydantic model — see below. |
+| `CalculationResult` | — | `query: CalculatorQuery`, `datapoints: list[DataPoint]`, `inputs: dict[str, list[DataPoint]]` | Frozen dataclass output of `Calculator.calculate`. `query` is the originating query; `datapoints` has one `DataPoint` per aligned index; `inputs` is the aligned parameter series the formula evaluated (`inputs[alias][i]` was used to compute `datapoints[i]`). Not a Pydantic model — see below. |
+
+Query and parameter types (`CalculatorQuery`, `ConstantParameter`, `TimeSeriesParameter`, `MultiTimeSeriesParameter`) are Pydantic so construction and `model_validate` still check aliases, discriminators, and aggregate/granularity rules. `DataPoint` and `CalculationResult` are not: assembling a result builds one `DataPoint` per timestamp for the output and for every input series, and Pydantic validation on that path dominated calculate time. They stay a `NamedTuple` and a frozen dataclass so assemble is just object construction. Attribute access is unchanged (`dp.timestamp`, `dp.value`); `model_dump` / `model_validate` are not available on these two types.
 
 In all three parameter kinds, `alias` is the name used inside `{...}` placeholders in the formula. `CalculatorQuery` rejects two parameters sharing the same `alias` at construction time:
 
@@ -530,7 +523,7 @@ deviation_query = CalculatorQuery(
 # A second, unrelated formula reusing {TEMP} in the same batch: fetched once, used twice.
 raw_query = CalculatorQuery(formula="{TEMP} * 1.8 + 32", parameters=[temp])
 
-deviation_result, fahrenheit_result = calculator.calculate_multiples(
+deviation_result, fahrenheit_result = await calculator.calculate_multiples(
     [deviation_query, raw_query], start, end
 )
 ```
@@ -565,7 +558,7 @@ query = CalculatorQuery(
     parameters=[lines_kg, kg_to_lbs, target_lbs],
 )
 
-result = calculator.calculate(query, start, end)
+result = await calculator.calculate(query, start, end)
 # one DataPoint per hour with data in common across all three lines;
 # each value is the combined, converted output as a % of target.
 ```
@@ -576,11 +569,11 @@ result = calculator.calculate(query, start, end)
 
 | File | Responsibility |
 |---|---|
-| `calculator.py` | `Calculator` — orchestrates retrieval + evaluation for one or many queries. Splits `ConstantParameter`s (broadcast, never fetched) from time-series parameters (fetched via `DatapointsRetriever`), uses `SeriesReducer` to collapse a `MultiTimeSeriesParameter`'s series, then aligns remaining time-series parameters (`intersect` by default, or `strict`). |
+| `calculator.py` | `Calculator` — async orchestrator for retrieval + evaluation of one or many queries. Takes a `CogniteClient` and uses `get_async_client()` for CDF I/O. Splits `ConstantParameter`s (broadcast, never fetched) from time-series parameters (fetched via `DatapointsRetriever`), uses `SeriesReducer` to collapse a `MultiTimeSeriesParameter`'s series, then aligns remaining time-series parameters (`intersect` by default, or `strict`). |
 | `_timing.py` | `StageTimer` — exclusive wall-clock timings for DEBUG stage summaries. No-op when the calculator logger is not at DEBUG. |
-| `datapoints_retrieval.py` | `DatapointsRetriever` — fetching only: builds deduplicated `DatapointsQuery` requests per unique (time series, aggregate, granularity) and parses CDF responses into `(timestamp, value)` pairs (dropping `None` values). Returns one *unreduced* series per instance id — combining them is the caller's job. |
+| `datapoints_retrieval.py` | `DatapointsRetriever` — fetching only: builds deduplicated `DatapointsQuery` requests per unique (time series, aggregate, granularity), retrieves CDF chunks of up to 100 series concurrently, and parses responses into `(timestamp, value)` pairs (dropping `None` values). Returns one *unreduced* series per instance id — combining them is the caller's job. |
 | `series_reducer.py` | `SeriesReducer` — timestamp intersection via a sorted k-way merge. `reduce` combines several series into one with `min`/`max`/`sum`/`average`; `align` filters several series onto their common timestamps. Both normalize every input first (sort by timestamp, collapse duplicate timestamps to their last value), including the single-series case, so output never depends on how many series were passed. Used by `Calculator` for `MultiTimeSeriesParameter` and for formula-level `intersect` alignment. |
-| `models.py` | Pydantic models: `CalculatorParameter` (discriminated union), `ConstantParameter`, `TimeSeriesParameter`, `MultiTimeSeriesParameter`, `TimeSeriesParameterBase` (shared fields, not itself part of the union), `ReducerType`, `AlignmentMode`, `Series` (the `list[(timestamp, value)]` alias used throughout), `CalculatorQuery` (validates unique parameter aliases), `CalculationResult`, `DataPoint`. |
+| `models.py` | Query models are Pydantic: `CalculatorParameter` (discriminated union), `ConstantParameter`, `TimeSeriesParameter`, `MultiTimeSeriesParameter`, `TimeSeriesParameterBase` (shared fields, not itself part of the union), `ReducerType`, `AlignmentMode`, `Series` (the `list[(timestamp, value)]` alias used throughout), `CalculatorQuery` (validates unique parameter aliases). Output types are not Pydantic — validation per datapoint was the assemble bottleneck — so `DataPoint` is a `NamedTuple` and `CalculationResult` is a frozen dataclass. |
 | `exceptions.py` | `CalculatorError`, the root every other exception in the package derives from, and `DatapointsRetrievalError` for unusable CDF responses. |
 | `formula_expression/core.py` | Public `evaluate()` entry point; merges positional mapping + kwargs. |
 | `formula_expression/_compiler.py` | Text normalization, placeholder substitution, AST allow-list validation (including allow-listed `Call`s), constant folding, `lru_cache`-based compile caching. |
