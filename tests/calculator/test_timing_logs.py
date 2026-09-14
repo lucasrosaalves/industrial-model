@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
 from datetime import UTC, datetime
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from cognite.client.data_classes.datapoints import Datapoints
@@ -48,16 +49,20 @@ def _datapoints(external_id: str, values: list[float]) -> Datapoints:
 
 
 def _client_returning(raw: list[Datapoints]) -> MagicMock:
+    retrieve = AsyncMock(return_value=raw)
     client = MagicMock()
-    client.time_series.data.retrieve.return_value = raw
+    client.time_series.data.retrieve = retrieve
+    client.get_async_client.return_value = client
     return client
 
 
 def _run_simple_calculate(client: MagicMock) -> None:
-    Calculator(client).calculate(
-        CalculatorQuery(formula="{A} * 2", parameters=[_param("A", "ts1")]),
-        _START,
-        _END,
+    asyncio.run(
+        Calculator(client).calculate(
+            CalculatorQuery(formula="{A} * 2", parameters=[_param("A", "ts1")]),
+            _START,
+            _END,
+        )
     )
 
 
@@ -107,13 +112,15 @@ def test_debug_logs_shared_retrieve_across_queries(
     calc = Calculator(_client_returning(raw))
     param = _param("A", "ts1")
 
-    calc.calculate_multiples(
-        [
-            CalculatorQuery(formula="{A} + 1", parameters=[param]),
-            CalculatorQuery(formula="{A} * 2", parameters=[param]),
-        ],
-        _START,
-        _END,
+    asyncio.run(
+        calc.calculate_multiples(
+            [
+                CalculatorQuery(formula="{A} + 1", parameters=[param]),
+                CalculatorQuery(formula="{A} * 2", parameters=[param]),
+            ],
+            _START,
+            _END,
+        )
     )
 
     assert "queries=2" in caplog.text
@@ -129,7 +136,8 @@ def test_debug_logs_summary_when_calculate_raises(
 ) -> None:
     caplog.set_level(logging.DEBUG, logger="industrial_model.calculator")
     client = MagicMock()
-    client.time_series.data.retrieve.side_effect = RuntimeError("cdf down")
+    client.time_series.data.retrieve = AsyncMock(side_effect=RuntimeError("cdf down"))
+    client.get_async_client.return_value = client
 
     with pytest.raises(RuntimeError, match="cdf down"):
         _run_simple_calculate(client)

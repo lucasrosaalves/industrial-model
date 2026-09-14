@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Annotated, Literal, TypeAlias
+from typing import Annotated, Literal, NamedTuple, TypeAlias
 
 from cognite.client.data_classes.datapoint_aggregates import Aggregate
 from pydantic import BaseModel, Field, model_validator
@@ -10,7 +11,9 @@ from pydantic import BaseModel, Field, model_validator
 from industrial_model.models import InstanceId
 
 
-class DataPoint(BaseModel):
+class DataPoint(NamedTuple):
+    """A timestamped numeric value."""
+
     timestamp: datetime
     value: float
 
@@ -111,7 +114,10 @@ class CalculatorQuery(BaseModel):
         return self
 
 
-class CalculationResult(BaseModel):
+@dataclass(slots=True, frozen=True)
+class CalculationResult:
+    """Output of ``Calculator.calculate``."""
+
     query: CalculatorQuery
     datapoints: list[DataPoint]
-    inputs: dict[str, list[DataPoint]] = Field(default_factory=dict)
+    inputs: dict[str, list[DataPoint]] = field(default_factory=dict)

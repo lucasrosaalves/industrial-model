@@ -1,12 +1,13 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
 from collections.abc import Sequence
 from datetime import UTC, datetime
 from typing import cast
 
-from cognite.client import CogniteClient
+from cognite.client import AsyncCogniteClient
 from cognite.client.data_classes.datapoints import Datapoints, DatapointsQuery
 
 from ._timing import StageTimer, timed
@@ -16,15 +17,16 @@ from .models import Series, TimeSeriesParameterBase
 logger = logging.getLogger(__name__)
 
 # Cognite's datapoints retrieve endpoint only accepts up to 100 time series
-# per request, so larger requests must be paginated client-side.
+# per request, so larger requests must be chunked client-side. Chunks are
+# fetched concurrently.
 _MAX_TIME_SERIES_PER_REQUEST = 100
 
 
 class DatapointsRetriever:
-    def __init__(self, cognite_client: CogniteClient) -> None:
+    def __init__(self, cognite_client: AsyncCogniteClient) -> None:
         self._client = cognite_client
 
-    def retrieve_datapoints(
+    async def retrieve_datapoints(
         self,
         parameters: Sequence[TimeSeriesParameterBase],
         start: datetime,
@@ -41,12 +43,11 @@ class DatapointsRetriever:
         with timed(timer, "build_requests"):
             requests, index_mapping = self._build_requests(parameters, start, end)
 
-        n_chunks = (
-            (len(requests) + _MAX_TIME_SERIES_PER_REQUEST - 1)
-            // _MAX_TIME_SERIES_PER_REQUEST
-            if requests
-            else 0
-        )
+        chunks = [
+            requests[i : i + _MAX_TIME_SERIES_PER_REQUEST]
+            for i in range(0, len(requests), _MAX_TIME_SERIES_PER_REQUEST)
+        ]
+        n_chunks = len(chunks)
         if timer is not None:
             timer.unique_timeseries = len(requests)
             timer.cdf_chunks = n_chunks
@@ -58,28 +59,14 @@ class DatapointsRetriever:
                 len(parameters),
             )
 
-        raw: list[Datapoints] = []
         with timed(timer, "retrieve"):
-            for chunk_no, i in enumerate(
-                range(0, len(requests), _MAX_TIME_SERIES_PER_REQUEST), start=1
-            ):
-                chunk = requests[i : i + _MAX_TIME_SERIES_PER_REQUEST]
-                started = time.perf_counter() if log_debug else None
-                response = self._client.time_series.data.retrieve(instance_id=chunk)
-                if started is not None:
-                    logger.debug(
-                        "retrieve chunk %s/%s: %s series in %.3fs",
-                        chunk_no,
-                        n_chunks,
-                        len(chunk),
-                        time.perf_counter() - started,
-                    )
-                if len(response) != len(chunk):
-                    raise DatapointsRetrievalError(
-                        f"expected {len(chunk)} datapoint series from CDF, "
-                        f"got {len(response)}"
-                    )
-                raw.extend(response)
+            responses = await asyncio.gather(
+                *(
+                    self._retrieve_chunk(chunk, chunk_no, n_chunks, log_debug)
+                    for chunk_no, chunk in enumerate(chunks, start=1)
+                )
+            )
+        raw = [dp for response in responses for dp in response]
 
         with timed(timer, "parse"):
             return [
@@ -88,6 +75,29 @@ class DatapointsRetriever:
                     parameters, index_mapping, strict=True
                 )
             ]
+
+    async def _retrieve_chunk(
+        self,
+        chunk: list[DatapointsQuery],
+        chunk_no: int,
+        n_chunks: int,
+        log_debug: bool,
+    ) -> Sequence[Datapoints]:
+        started = time.perf_counter() if log_debug else None
+        response = await self._client.time_series.data.retrieve(instance_id=chunk)
+        if started is not None:
+            logger.debug(
+                "retrieve chunk %s/%s: %s series in %.3fs",
+                chunk_no,
+                n_chunks,
+                len(chunk),
+                time.perf_counter() - started,
+            )
+        if len(response) != len(chunk):
+            raise DatapointsRetrievalError(
+                f"expected {len(chunk)} datapoint series from CDF, got {len(response)}"
+            )
+        return response
 
     def _build_requests(
         self,
