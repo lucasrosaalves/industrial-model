@@ -168,8 +168,9 @@ def _calculate(
     query: CalculatorQuery,
     start: datetime,
     end: datetime,
+    timezone: str | None = None,
 ) -> CalculationResult:
-    return asyncio.run(calc.calculate(query, start, end))
+    return asyncio.run(calc.calculate(query, start, end, timezone=timezone))
 
 
 def _calculate_multiples(
@@ -177,8 +178,9 @@ def _calculate_multiples(
     queries: list[CalculatorQuery],
     start: datetime,
     end: datetime,
+    timezone: str | None = None,
 ) -> list[CalculationResult]:
-    return asyncio.run(calc.calculate_multiples(queries, start, end))
+    return asyncio.run(calc.calculate_multiples(queries, start, end, timezone=timezone))
 
 
 def _make_aggregate_datapoints_list(
@@ -415,6 +417,51 @@ def test_calculate_multiples_empty_queries_returns_empty_list() -> None:
     results = _calculate_multiples(Calculator(client), [], _START, _END)
 
     assert results == []
+
+
+def test_calculate_forwards_timezone_to_every_aggregate() -> None:
+    first = _make_param_with_aggregate("A", "sum", "1d", external_id="ts1")
+    second = _make_param_with_aggregate("B", "sum", "1d", external_id="ts2")
+    client = _client_returning(
+        _make_aggregate_datapoints_list(("s", "ts1"), "sum", [1.0])
+        + _make_aggregate_datapoints_list(("s", "ts2"), "sum", [2.0])
+    )
+
+    _calculate_multiples(
+        Calculator(client),
+        [
+            _make_query("{A}", [first]),
+            _make_query("{B}", [second]),
+        ],
+        _START,
+        _END,
+        timezone="America/New_York",
+    )
+
+    queries = client.time_series.data.retrieve.call_args.kwargs["instance_id"]
+    assert [query.timezone for query in queries] == [
+        "America/New_York",
+        "America/New_York",
+    ]
+    assert queries[0].granularity == "1d"
+
+
+def test_calculate_forwards_timezone_on_a_single_query() -> None:
+    param = _make_param_with_aggregate("A", "sum", "1d", external_id="ts1")
+    client = _client_returning(
+        _make_aggregate_datapoints_list(("s", "ts1"), "sum", [1.0])
+    )
+
+    _calculate(
+        Calculator(client),
+        _make_query("{A}", [param]),
+        _START,
+        _END,
+        timezone="UTC+05:30",
+    )
+
+    query = client.time_series.data.retrieve.call_args.kwargs["instance_id"][0]
+    assert query.timezone == "UTC+05:30"
 
 
 # ---------------------------------------------------------------------------

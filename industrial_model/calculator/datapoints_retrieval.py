@@ -32,6 +32,7 @@ class DatapointsRetriever:
         start: datetime,
         end: datetime,
         timer: StageTimer | None = None,
+        timezone: str | None = None,
     ) -> list[list[Series]]:
         """Fetch datapoints for every parameter's time series, unreduced.
 
@@ -39,9 +40,14 @@ class DatapointsRetriever:
         ``timeseries_instance_id`` it references, in that order. Combining a
         parameter's series (when it references more than one) is the
         caller's responsibility - this class only retrieves and parses data.
+
+        ``timezone`` is applied to every aggregate request in this retrieve
+        and omitted from the query when unset.
         """
         with timed(timer, "build_requests"):
-            requests, index_mapping = self._build_requests(parameters, start, end)
+            requests, index_mapping = self._build_requests(
+                parameters, start, end, timezone
+            )
 
         chunks = [
             requests[i : i + _MAX_TIME_SERIES_PER_REQUEST]
@@ -104,6 +110,7 @@ class DatapointsRetriever:
         parameters: Sequence[TimeSeriesParameterBase],
         start: datetime,
         end: datetime,
+        timezone: str | None = None,
     ) -> tuple[list[DatapointsQuery], list[list[int]]]:
         dp_raw_queries: dict[tuple[str, str], DatapointsQuery] = {}
         dp_aggregate_queries: dict[tuple[tuple[str, str], str], DatapointsQuery] = {}
@@ -143,6 +150,8 @@ class DatapointsRetriever:
                         start=start,
                         end=end,
                     )
+                    if timezone is not None:
+                        request.timezone = timezone
                     dp_aggregate_queries[agg_key] = request
                     agg_request_index[agg_key] = len(requests)
                     requests.append(request)

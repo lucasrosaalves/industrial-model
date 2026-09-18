@@ -97,8 +97,11 @@ def _retrieve(
     parameters: Sequence[TimeSeriesParameterBase],
     start: datetime = _START,
     end: datetime = _END,
+    timezone: str | None = None,
 ) -> list[list[Series]]:
-    return asyncio.run(retriever.retrieve_datapoints(parameters, start, end))
+    return asyncio.run(
+        retriever.retrieve_datapoints(parameters, start, end, timezone=timezone)
+    )
 
 
 def _base_ms() -> int:
@@ -130,6 +133,73 @@ def test_repeated_aggregate_on_same_series_is_not_duplicated() -> None:
     requests, _ = retriever._build_requests([first, second], _START, _END)
 
     assert requests[0].aggregates == ["average"]
+
+
+def test_retrieve_timezone_is_set_on_every_aggregate_query() -> None:
+    retriever = DatapointsRetriever(MagicMock())
+    hourly = _param("A", aggregate="average", granularity="1h")
+    daily = _param("B", aggregate="sum", granularity="1d")
+
+    requests, _ = retriever._build_requests(
+        [hourly, daily], _START, _END, timezone="America/New_York"
+    )
+
+    assert [request.timezone for request in requests] == [
+        "America/New_York",
+        "America/New_York",
+    ]
+
+
+def test_retrieve_timezone_is_applied_when_calling_cdf() -> None:
+    dp = _datapoints(timestamps=[_base_ms()], average=[1.0])
+    client = _client_returning(dp)
+    retriever = DatapointsRetriever(client)
+    daily = _param("A", aggregate="average", granularity="1d")
+
+    _retrieve(retriever, [daily], timezone="America/New_York")
+
+    query = client.time_series.data.retrieve.call_args.kwargs["instance_id"][0]
+    assert query.timezone == "America/New_York"
+    assert query.granularity == "1d"
+
+
+def test_raw_retrieve_does_not_set_timezone() -> None:
+    retriever = DatapointsRetriever(MagicMock())
+    raw = _param("A")
+
+    requests, _ = retriever._build_requests(
+        [raw], _START, _END, timezone="America/New_York"
+    )
+
+    assert requests[0].granularity is None
+    assert "timezone" not in requests[0].dump()
+
+
+def test_mixed_raw_and_aggregate_only_sets_timezone_on_aggregates() -> None:
+    retriever = DatapointsRetriever(MagicMock())
+    raw = _param("A")
+    daily = _param("B", aggregate="sum", granularity="1d")
+
+    requests, _ = retriever._build_requests(
+        [raw, daily], _START, _END, timezone="America/New_York"
+    )
+
+    assert "timezone" not in requests[0].dump()
+    assert requests[1].timezone == "America/New_York"
+
+
+def test_merged_aggregates_keep_a_single_timezone() -> None:
+    retriever = DatapointsRetriever(MagicMock())
+    avg = _param("A", aggregate="average", granularity="1h")
+    total = _param("B", aggregate="sum", granularity="1h")
+
+    requests, _ = retriever._build_requests(
+        [avg, total], _START, _END, timezone="Europe/Oslo"
+    )
+
+    assert len(requests) == 1
+    assert requests[0].aggregates == ["average", "sum"]
+    assert requests[0].timezone == "Europe/Oslo"
 
 
 def test_same_timeseries_different_granularity_produces_separate_requests() -> None:
