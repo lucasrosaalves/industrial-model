@@ -1,11 +1,18 @@
 from __future__ import annotations
 
 import logging
+import math
 from collections.abc import Iterable
 from datetime import datetime
 
 from cognite.client import CogniteClient
 
+from ._grid import (
+    build_bucket_grid,
+    expand_series_on_grid,
+    formula_uses_rolling_average,
+    shared_aggregate_granularity,
+)
 from ._timing import StageTimer, timed
 from .datapoints_retrieval import DatapointsRetriever
 from .formula_expression import evaluate
@@ -41,15 +48,33 @@ class Calculator:
         query: CalculatorQuery,
         start: datetime,
         end: datetime,
+        *,
+        timezone: str | None = None,
     ) -> CalculationResult:
-        return (await self.calculate_multiples([query], start, end))[0]
+        """Evaluate one query.
+
+        ``timezone`` is keyword-only. It aligns hour-and-longer CDF aggregates
+        to a local calendar; ``start`` / ``end`` stay UTC instants.
+        """
+        results = await self.calculate_multiples([query], start, end, timezone=timezone)
+        return results[0]
 
     async def calculate_multiples(
         self,
         queries: list[CalculatorQuery],
         start: datetime,
         end: datetime,
+        *,
+        timezone: str | None = None,
     ) -> list[CalculationResult]:
+        """Evaluate several queries in one retrieve.
+
+        ``timezone`` is an IANA id or fixed offset (``America/New_York``,
+        ``UTC+05:30``) applied to every hour-and-longer aggregate in the
+        batch. Omit it for UTC calendar buckets. ``start`` / ``end`` are
+        not reinterpreted. Raw and sub-hour retrieves are unchanged.
+        The value is forwarded to CDF; invalid ids fail on retrieve.
+        """
         timer = StageTimer() if logger.isEnabledFor(logging.DEBUG) else None
         ok = False
         try:
@@ -68,7 +93,7 @@ class Calculator:
                 if isinstance(parameter, TimeSeriesParameterBase)
             ]
             leaf_series_by_parameter = await self._retriever.retrieve_datapoints(
-                ts_parameters, start, end, timer=timer
+                ts_parameters, start, end, timer=timer, timezone=timezone
             )
 
             results: list[CalculationResult] = []
@@ -78,6 +103,9 @@ class Calculator:
                     self._calculate(
                         query,
                         leaf_series_by_parameter[offset : offset + count],
+                        start,
+                        end,
+                        timezone,
                         timer,
                     )
                 )
@@ -92,6 +120,9 @@ class Calculator:
         self,
         query: CalculatorQuery,
         leaf_series_by_parameter: list[list[Series]],
+        start: datetime,
+        end: datetime,
+        timezone: str | None,
         timer: StageTimer | None = None,
     ) -> CalculationResult:
         it = iter(leaf_series_by_parameter)
@@ -120,8 +151,14 @@ class Calculator:
         log_query = logger.isEnabledFor(logging.DEBUG)
         input_lengths = [len(series) for series in ts_series] if log_query else None
         with timed(timer, "align"):
-            ts_series = _align_series(
-                query.alignment, ts_aliases, ts_series, self._series_reducer
+            ts_series, filled = _align_or_fill_grid(
+                query,
+                ts_aliases,
+                ts_series,
+                start,
+                end,
+                timezone,
+                self._series_reducer,
             )
             timestamps = [ts for ts, _ in ts_series[0]] if ts_series else []
             values_map = {
@@ -134,6 +171,10 @@ class Calculator:
 
         with timed(timer, "evaluate"):
             values = evaluate(query.formula, values_map)
+            if filled:
+                timestamps, values, ts_series = _drop_nan_results(
+                    timestamps, values, ts_series
+                )
 
         with timed(timer, "assemble"):
             inputs = {
@@ -173,6 +214,36 @@ def _to_datapoints(series: Iterable[tuple[datetime, float]]) -> list[DataPoint]:
     return list(map(DataPoint._make, series))
 
 
+def _align_or_fill_grid(
+    query: CalculatorQuery,
+    aliases: list[str],
+    ts_series: list[Series],
+    start: datetime,
+    end: datetime,
+    timezone: str | None,
+    series_reducer: SeriesReducer,
+) -> tuple[list[Series], bool]:
+    ts_parameters = [
+        parameter
+        for parameter in query.parameters
+        if isinstance(parameter, TimeSeriesParameterBase)
+    ]
+    granularity = shared_aggregate_granularity(ts_parameters)
+    if (
+        granularity is not None
+        and ts_series
+        and all(ts_series)
+        and formula_uses_rolling_average(query.formula)
+    ):
+        references = [timestamp for series in ts_series for timestamp, _ in series]
+        grid = build_bucket_grid(start, end, granularity, timezone, references)
+        if grid:
+            if query.alignment == "strict":
+                _require_aligned_timestamps(aliases, ts_series)
+            return [expand_series_on_grid(series, grid) for series in ts_series], True
+    return _align_series(query.alignment, aliases, ts_series, series_reducer), False
+
+
 def _align_series(
     mode: AlignmentMode,
     aliases: list[str],
@@ -183,6 +254,22 @@ def _align_series(
         _require_aligned_timestamps(aliases, ts_series)
         return ts_series
     return series_reducer.align(ts_series)
+
+
+def _drop_nan_results(
+    timestamps: list[datetime],
+    values: tuple[float, ...],
+    ts_series: list[Series],
+) -> tuple[list[datetime], tuple[float, ...], list[Series]]:
+    keep = [not math.isnan(value) for value in values]
+    return (
+        [timestamp for timestamp, flag in zip(timestamps, keep, strict=True) if flag],
+        tuple(value for value, flag in zip(values, keep, strict=True) if flag),
+        [
+            [point for point, flag in zip(series, keep, strict=True) if flag]
+            for series in ts_series
+        ],
+    )
 
 
 def _require_aligned_timestamps(

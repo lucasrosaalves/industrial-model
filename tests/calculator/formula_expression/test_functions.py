@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from math import nan
+
 import pytest
 
 from industrial_model.calculator.formula_expression import evaluate
@@ -29,6 +31,19 @@ def test_rolling_average_window_larger_than_series_is_expanding_mean() -> None:
 
 def test_rolling_average_empty_series_returns_empty_tuple() -> None:
     assert evaluate("rolling_average({A}, 3)", {"A": []}) == ()
+
+
+def test_rolling_average_skips_nan_holes_in_the_window() -> None:
+    result = evaluate(
+        "rolling_average({A}, 3)",
+        {"A": [10.0, 20.0, 30.0, nan, nan, 100.0]},
+    )
+    assert_values_equal(result, [10.0, 15.0, 20.0, 25.0, 30.0, 100.0])
+
+
+def test_rolling_average_all_nan_window_is_nan() -> None:
+    result = evaluate("rolling_average({A}, 2)", {"A": [nan, nan, 4.0]})
+    assert_values_equal(result, [nan, nan, 4.0])
 
 
 def test_rolling_average_single_point_is_itself() -> None:
