@@ -19,13 +19,13 @@ from industrial_model.models.relation_helpers import (
 
 class {{ view_definition.view_name }}(WritableViewInstance):
     {{ view_definition.view_config }}
-{% if view_definition.entity_fields %}
-{% for field in view_definition.entity_fields %}
+{%- if view_definition.entity_fields %}
+{%- for field in view_definition.entity_fields %}
     {{ field }}
-{% endfor %}
-{% else %}
+{%- endfor %}
+{%- else %}
     pass
-{% endif %}
+{%- endif %}
 
     def edge_id_factory(
         self, target_node: InstanceId, edge_type: InstanceId
@@ -37,9 +37,10 @@ class {{ view_definition.view_name }}(WritableViewInstance):
             ),
             space=self.space,
         )
-{% for field in view_definition.entity_fields %}
-{% if field.concrete_type %}
-{% if field.is_list %}
+{%- for field in view_definition.entity_fields %}
+{%- if field.concrete_type %}
+{%- if field.is_list %}
+
     def {{ field.field_name }}_or_none(self) -> list[{{ field.concrete_type }}]:
         return _relations_or_none(self.{{ field.field_name }}, {{ field.concrete_type }})
 
@@ -50,7 +51,8 @@ class {{ view_definition.view_name }}(WritableViewInstance):
             field_name="{{ field.field_alias or field.field_name }}",
             owner=self,
         )
-{% else %}
+{%- else %}
+
     def {{ field.field_name }}_or_none(self) -> {{ field.concrete_type }} | None:
         return _relation_or_none(self.{{ field.field_name }}, {{ field.concrete_type }})
 
@@ -61,19 +63,19 @@ class {{ view_definition.view_name }}(WritableViewInstance):
             field_name="{{ field.field_alias or field.field_name }}",
             owner=self,
         )
-{% endif %}
-{% endif %}
-{% endfor %}
+{%- endif %}
+{%- endif %}
+{%- endfor %}
 
 
 class {{ view_definition.view_name }}Aggregation(AggregatedViewInstance):
     {{ view_definition.aggregation_view_config }}
-{% if view_definition.aggregate_fields %}
-{% for field in view_definition.aggregate_fields %}
+{%- if view_definition.aggregate_fields %}
+{%- for field in view_definition.aggregate_fields %}
     {{ field }}
-{% endfor %}
-{% else %}
+{%- endfor %}
+{%- else %}
     pass
-{% endif %}
+{%- endif %}
 
 {% endfor %}

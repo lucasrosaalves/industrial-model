@@ -144,7 +144,7 @@ pagination, and async usage.
 1. **Fetch views** — connects to CDF and retrieves the inline-expanded views for the target data model. Dependency views referenced by relations are also retrieved so the generated `ViewMapperCache` is complete (skipped with `--no-view-mapper-cache`).
 2. **Build definitions** — maps each CDF property type to a Python type and resolves relation paths between views.
 3. **Render templates** — Jinja2 templates produce the source files for the package. `ViewSchema` constructors are written to `view_mapper.py` and the facade passes `VIEW_MAPPER_CACHE` into `Engine`. Pass `--no-view-mapper-cache` to skip this and fetch views from CDF at runtime.
-4. **Format** — runs `ruff format` then `ruff check --fix` on the output directory so the generated code is always clean.
+4. **Format** — runs `ruff format --isolated` then `ruff check --fix --isolated` on the output directory. Isolated mode ignores a downstream `pyproject.toml` that excludes the generated package, so formatting still runs.
 
 ---
 
