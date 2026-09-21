@@ -1,3 +1,5 @@
+{% include "header.j2" %}
+
 from __future__ import annotations
 
 import datetime
@@ -29,5 +31,16 @@ class {{ view_definition.view_name }}(WritableViewInstance):
             ),
             space=self.space,
         )
+
+
+class {{ view_definition.view_name }}Aggregation(AggregatedViewInstance):
+    {{ view_definition.aggregation_view_config }}
+{% if view_definition.aggregate_fields %}
+{% for field in view_definition.aggregate_fields %}
+    {{ field }}
+{% endfor %}
+{% else %}
+    pass
+{% endif %}
 
 {% endfor %}

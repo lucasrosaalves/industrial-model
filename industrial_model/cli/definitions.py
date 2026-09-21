@@ -23,6 +23,8 @@ from .constants import (
 )
 from .helpers import to_camel, to_pascal, to_snake
 
+_RESERVED_FACADE_ATTRIBUTES = frozenset({"engine"})
+
 
 class FieldDefinition(BaseModel):
     field_name: str
@@ -198,6 +200,8 @@ class ViewDefinition(BaseModel):
             view_alias=(view.external_id if view_name != view.external_id else None),
             view_code=cls._extract_view_code(view),
             view_module_name=to_snake(view_name),
+            # view_module_name stays the CDF-derived snake name; facade_attribute_name
+            # remaps reserved names such as "engine".
             aggregate_fields=aggregate_fields,
             search_fields=search_fields,
             regular_fields=regular_fields,
@@ -222,6 +226,12 @@ class ViewDefinition(BaseModel):
 
         view_code = description_metadata[code_idx + 1].strip()
         return view_code if view_code else None
+
+    @property
+    def facade_attribute_name(self) -> str:
+        if self.view_module_name in _RESERVED_FACADE_ATTRIBUTES:
+            return f"{self.view_module_name}_view"
+        return self.view_module_name
 
     @property
     def view_config(self) -> str:
@@ -345,41 +355,6 @@ class ViewDefinition(BaseModel):
     @property
     def aggregation_property_type_name(self) -> str:
         return f"{self.view_name}AggregationProperty"
-
-    @property
-    def relation_type_imports(self) -> list[tuple[str, str, str]]:
-        targets = {
-            relation.target_view_external_id
-            for relation in self.relation_fields
-            if relation.target_view_available
-            and to_pascal(relation.target_view_external_id) != self.view_name
-        }
-        return sorted(
-            (
-                to_snake(to_pascal(target)),
-                to_pascal(target),
-                f"{to_pascal(target)}Filter",
-            )
-            for target in targets
-        )
-
-    @property
-    def filter_relation_type_imports(self) -> list[tuple[str, str, str]]:
-        targets = {
-            relation.target_view_external_id
-            for relation in self.relation_fields
-            if not relation.is_list
-            and relation.target_view_available
-            and to_pascal(relation.target_view_external_id) != self.view_name
-        }
-        return sorted(
-            (
-                to_snake(to_pascal(target)),
-                to_pascal(target),
-                f"{to_pascal(target)}Filter",
-            )
-            for target in targets
-        )
 
     @property
     def group_by_property_literal(self) -> str:

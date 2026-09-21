@@ -1,22 +1,35 @@
-from industrial_model import Engine, PaginatedResult
-from industrial_model.queries import build_query_statement
-from industrial_model.view_client import ViewClient
+{% include "header.j2" %}
 
-from .filters import {{ view_definition.view_name }}Filter
-from .models import {{ view_definition.view_name }}, {{ view_definition.view_name }}Aggregation
+from industrial_model import Engine as _Engine
+from industrial_model import PaginatedResult as _PaginatedResult
+from industrial_model.queries import build_query_statement as _build_query_statement
+from industrial_model.view_client import ViewClient as _ViewClient
+
+from .filters import (
+{% for view_definition in view_definitions %}
+    {{ view_definition.view_name }}Filter,
+{% endfor %}
+)
+from .models import (
+{% for view_definition in view_definitions %}
+    {{ view_definition.view_name }},
+    {{ view_definition.view_name }}Aggregation,
+{% endfor %}
+)
 from .types import (
+{% for view_definition in view_definitions %}
     {{ view_definition.aggregation_property_type_name }},
     {{ view_definition.group_by_property_type_name }},
     {{ view_definition.include_property_type_name }},
     {{ view_definition.query_property_type_name }},
     {{ view_definition.sort_type_name }},
+{% endfor %}
 )
 
-_RELATION_PROPERTIES: frozenset[str] = {{ view_definition.relation_property_set }}
-
+{% for view_definition in view_definitions %}
 
 class {{ view_definition.view_name }}Client(
-    ViewClient[
+    _ViewClient[
         {{ view_definition.view_name }},
         {{ view_definition.view_name }}Aggregation,
         {{ view_definition.view_name }}Filter,
@@ -26,7 +39,9 @@ class {{ view_definition.view_name }}Client(
         {{ view_definition.sort_type_name }},
     ]
 ):
-    def __init__(self, engine: Engine) -> None:
+    _RELATION_PROPERTIES: frozenset[str] = {{ view_definition.relation_property_set }}
+
+    def __init__(self, engine: _Engine) -> None:
         super().__init__(engine, {{ view_definition.view_name }}, {{ view_definition.view_name }}Aggregation)
 
     def query(
@@ -37,12 +52,12 @@ class {{ view_definition.view_name }}Client(
         sort: {{ view_definition.sort_type_name }} | None = None,
         limit: int = 1000,
         cursor: str | None = None,
-    ) -> PaginatedResult[{{ view_definition.view_name }}]:
+    ) -> _PaginatedResult[{{ view_definition.view_name }}]:
         return self._engine.query(
-            build_query_statement(
+            _build_query_statement(
                 self._entity_cls,
                 filters,
-                exclude_relations=[p for p in _RELATION_PROPERTIES if p not in (include or ())],
+                exclude_relations=[p for p in self._RELATION_PROPERTIES if p not in (include or ())],
                 sort=sort,
                 limit=limit,
                 cursor=cursor,
@@ -57,12 +72,12 @@ class {{ view_definition.view_name }}Client(
         sort: {{ view_definition.sort_type_name }} | None = None,
         limit: int = 1000,
         cursor: str | None = None,
-    ) -> PaginatedResult[{{ view_definition.view_name }}]:
+    ) -> _PaginatedResult[{{ view_definition.view_name }}]:
         return await self._engine.query_async(
-            build_query_statement(
+            _build_query_statement(
                 self._entity_cls,
                 filters,
-                exclude_relations=[p for p in _RELATION_PROPERTIES if p not in (include or ())],
+                exclude_relations=[p for p in self._RELATION_PROPERTIES if p not in (include or ())],
                 sort=sort,
                 limit=limit,
                 cursor=cursor,
@@ -78,10 +93,10 @@ class {{ view_definition.view_name }}Client(
         limit: int = 1000,
     ) -> list[{{ view_definition.view_name }}]:
         return self._engine.query_all_pages(
-            build_query_statement(
+            _build_query_statement(
                 self._entity_cls,
                 filters,
-                exclude_relations=[p for p in _RELATION_PROPERTIES if p not in (include or ())],
+                exclude_relations=[p for p in self._RELATION_PROPERTIES if p not in (include or ())],
                 sort=sort,
                 limit=limit,
             )
@@ -96,11 +111,13 @@ class {{ view_definition.view_name }}Client(
         limit: int = 1000,
     ) -> list[{{ view_definition.view_name }}]:
         return await self._engine.query_all_pages_async(
-            build_query_statement(
+            _build_query_statement(
                 self._entity_cls,
                 filters,
-                exclude_relations=[p for p in _RELATION_PROPERTIES if p not in (include or ())],
+                exclude_relations=[p for p in self._RELATION_PROPERTIES if p not in (include or ())],
                 sort=sort,
                 limit=limit,
             )
         )
+
+{% endfor %}

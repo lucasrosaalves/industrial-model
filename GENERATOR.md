@@ -105,21 +105,17 @@ Running the generator for a data model with views `CogniteAsset` and `CogniteEqu
 generated/
 ├── __init__.py               # exports CogniteCoreClient
 ├── cognite_core_client.py    # facade class
-├── models.py                 # all models re-exported
+├── models.py                 # writable models and aggregation models
+├── filters.py                # all *Filter typed dicts
+├── types.py                  # all property literals and *Sort typed dicts
+├── clients.py                # all view clients
 ├── view_mapper.py            # ViewMapperCache (omit with --no-view-mapper-cache)
-├── cognite_asset/
-│   ├── __init__.py
-│   ├── client.py             # CogniteAssetClient
-│   ├── filters.py            # CogniteAssetFilter
-│   ├── models.py             # CogniteAsset, CogniteAssetAggregation
-│   └── types.py              # literal types for properties
-└── cognite_equipment/
-    ├── __init__.py
-    ├── client.py
-    ├── filters.py
-    ├── models.py
-    └── types.py
+└── py.typed
 ```
+
+Generated files are immutable. Each file starts with a header that records the
+data model, generation timestamp, and `industrial-model` version. Do not edit
+them; change the data model and run `industrial_model generate` again.
 
 ### File descriptions
 
@@ -127,12 +123,11 @@ generated/
 |------|----------|
 | `__init__.py` | Exports the facade class by name |
 | `{client_module}.py` | Facade class; one attribute per view, each an instance of its view client |
-| `models.py` | Re-exports all view models from the per-view packages |
+| `models.py` | All `{View}` writable models and `{View}Aggregation` models |
+| `filters.py` | All `{View}Filter` typed dicts, one key per filterable property |
+| `types.py` | Literal types: `{View}QueryProperty`, `{View}GroupByProperty`, `{View}AggregationProperty`, `{View}IncludeProperty`, `{View}SortProperty`, plus `{View}Sort` |
+| `clients.py` | All `{View}Client(ViewClient)` classes with typed query methods |
 | `view_mapper.py` | `VIEW_MAPPER_CACHE` built from dumped views (omit with `--no-view-mapper-cache`) |
-| `{view}/models.py` | `{View}` (writable model) and `{View}Aggregation` (aggregation model) |
-| `{view}/filters.py` | `{View}Filter` typed dict with one key per filterable property |
-| `{view}/types.py` | Literal types: `{View}QueryProperty`, `{View}FilterProperty`, `{View}GroupByProperty`, `{View}AggregationProperty`, `{View}SortProperty`, plus `{View}Sort` |
-| `{view}/client.py` | `{View}Client(ViewClient)` with typed overloads for every method |
 
 ---
 
