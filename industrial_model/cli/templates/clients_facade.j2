@@ -1,3 +1,5 @@
+{% include "header.j2" %}
+
 from collections.abc import Callable
 from typing import overload
 
@@ -5,9 +7,7 @@ from cognite.client import CogniteClient
 
 from industrial_model import DataModelId, Engine
 
-{% for view_definition in view_definitions %}
-from .{{ view_definition.view_module_name }} import {{ view_definition.view_name }}Client
-{% endfor %}
+from . import clients
 {% if view_mapper_cache %}
 from .view_mapper import VIEW_MAPPER_CACHE
 {% endif %}
@@ -57,7 +57,7 @@ class {{ client_name }}:
         )
         self.engine = engine
 {% for view_definition in view_definitions %}
-        self.{{ view_definition.view_module_name }} = {{ view_definition.view_name }}Client(engine)
+        self.{{ view_definition.facade_attribute_name }} = clients.{{ view_definition.view_name }}Client(engine)
 {% endfor %}
 
     @staticmethod

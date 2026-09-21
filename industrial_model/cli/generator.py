@@ -1,7 +1,9 @@
+import importlib.metadata
 import shutil
 import subprocess
 import sys
 from collections.abc import Sequence
+from datetime import UTC, datetime
 from pathlib import Path
 from pprint import pformat
 from typing import Any
@@ -19,6 +21,10 @@ from industrial_model.config import DataModelId
 from .config import GeneratorConfig, InstanceSpaceConfig
 from .definitions import ViewDefinition, resolve_all_relation_paths
 from .helpers import to_snake
+
+_RESERVED_PACKAGE_MODULES = frozenset(
+    {"clients", "filters", "models", "types", "view_mapper"}
+)
 
 
 def generate(config: GeneratorConfig, *, overwrite: bool = False) -> None:
@@ -137,11 +143,22 @@ def _write_package_files(
     view_mapper_cache: bool,
     cache_views: Sequence[View],
 ) -> None:
+    facade_module_name = to_snake(client_name)
+    if facade_module_name in _RESERVED_PACKAGE_MODULES:
+        raise ValueError(
+            f"Client name {client_name!r} generates module "
+            f"{facade_module_name!r}, which is reserved for generated package "
+            "files. Pass a different --client-name."
+        )
+
     env = _create_jinja_environment()
     paths = {
         "__init__.j2": output_path / "__init__.py",
-        "clients_facade.j2": output_path / f"{to_snake(client_name)}.py",
+        "clients_facade.j2": output_path / f"{facade_module_name}.py",
         "models.j2": output_path / "models.py",
+        "filters.j2": output_path / "filters.py",
+        "types.j2": output_path / "types.py",
+        "clients.j2": output_path / "clients.py",
     }
     if view_mapper_cache:
         paths["view_mapper_cache.j2"] = output_path / "view_mapper.py"
@@ -161,27 +178,17 @@ def _write_package_files(
             if view_mapper_cache
             else "[]"
         ),
+        "header_data_model": _header_data_model(data_model),
+        "generated_at": _generated_at(),
+        "package_version": _package_version(),
+        "used_filter_types": sorted(
+            {ft for view in view_definitions for ft in view.used_filter_types}
+        ),
     }
     for template_name, path in paths.items():
         path.write_text(
             env.get_template(template_name).render(context), encoding="utf-8"
         )
-
-    for view_definition in view_definitions:
-        view_path = output_path / view_definition.view_module_name
-        view_path.mkdir(parents=True)
-        view_context = {**context, "view_definition": view_definition}
-        for template_name, filename in {
-            "view_init.j2": "__init__.py",
-            "view_models.j2": "models.py",
-            "view_filters.j2": "filters.py",
-            "view_types.j2": "types.py",
-            "view_specific_client.j2": "client.py",
-        }.items():
-            (view_path / filename).write_text(
-                env.get_template(template_name).render(view_context),
-                encoding="utf-8",
-            )
 
 
 def _create_jinja_environment() -> Any:
@@ -198,6 +205,26 @@ def _create_jinja_environment() -> Any:
         autoescape=False,
         keep_trailing_newline=True,
     )
+
+
+def _header_data_model(data_model: DataModelId) -> str:
+    version_label = (
+        data_model.version
+        if data_model.version.startswith("v")
+        else f"v{data_model.version}"
+    )
+    return f"{data_model.space}/{data_model.external_id} {version_label}"
+
+
+def _generated_at() -> str:
+    return datetime.now(UTC).isoformat(timespec="milliseconds").replace("+00:00", "Z")
+
+
+def _package_version() -> str:
+    try:
+        return importlib.metadata.version("industrial-model")
+    except importlib.metadata.PackageNotFoundError:
+        return "unknown"
 
 
 def _extract_cluster(base_url: str | None) -> str | None:

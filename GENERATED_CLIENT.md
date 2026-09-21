@@ -17,6 +17,11 @@ industrial_model generate \
 The generated package contains a facade class, one typed sub-client per view,
 typed filters, typed property literals, writable models, and aggregation models.
 
+Generated files are immutable. Do not edit them by hand or ask an assistant to
+change them. Change the data model and run `industrial_model generate` again.
+Each file starts with a header that records the data model id, generation
+timestamp, and `industrial-model` version.
+
 ---
 
 ## Client Construction
@@ -125,6 +130,15 @@ client.cognite_equipment  # CogniteEquipmentClient
 client.cognite_time_series  # CogniteTimeSeriesClient
 client.cognite_file  # CogniteFileClient
 client.cognite_unit  # CogniteUnitClient
+```
+
+You can also import generated symbols from the grouped modules:
+
+```python
+from cognite_core_client.models import CogniteAsset, CogniteAssetAggregation
+from cognite_core_client.filters import CogniteAssetFilter
+from cognite_core_client.types import CogniteAssetQueryProperty
+from cognite_core_client.clients import CogniteAssetClient
 ```
 
 Each view client exposes:

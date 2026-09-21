@@ -1,9 +1,12 @@
+{% include "header.j2" %}
+
 from __future__ import annotations
 
 from typing import Literal, TypeAlias, TypedDict
 
 from industrial_model.constants import SORT_DIRECTION
 
+{% for view_definition in view_definitions %}
 {{ view_definition.query_property_type_name }}: TypeAlias = {{ view_definition.query_property_literal }}
 {{ view_definition.group_by_property_type_name }}: TypeAlias = {{ view_definition.group_by_property_literal }}
 {{ view_definition.aggregation_property_type_name }}: TypeAlias = {{ view_definition.aggregate_property_literal }}
@@ -19,3 +22,5 @@ from industrial_model.constants import SORT_DIRECTION
     },
     total=False,
 )
+
+{% endfor %}
