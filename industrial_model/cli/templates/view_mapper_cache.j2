@@ -1,9 +1,9 @@
 {% include "header.j2" %}
 
-from typing import Any
+from cognite.client.data_classes.data_modeling import DirectRelationReference, ViewId
 
-from industrial_model import ViewMapperCache
+from industrial_model import ViewMapperCache, ViewProperty, ViewSchema
 
-_VIEW_DUMPS: list[dict[str, Any]] = {{ view_dumps }}
+_VIEWS = {{ views }}
 
-VIEW_MAPPER_CACHE = ViewMapperCache.from_dumps(_VIEW_DUMPS)
+VIEW_MAPPER_CACHE = ViewMapperCache(_VIEWS)

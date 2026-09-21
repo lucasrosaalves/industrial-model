@@ -1,6 +1,5 @@
 import asyncio
-from collections.abc import Mapping, Sequence
-from typing import Any, Self
+from collections.abc import Sequence
 
 from cognite.client import AsyncCogniteClient
 from cognite.client.data_classes.data_modeling import (
@@ -12,15 +11,17 @@ from cognite.client.data_classes.data_modeling.views import ViewProperty
 
 from industrial_model.config import DataModelId
 
+from .view_schema import ViewSchema
+
 
 class ViewMapper:
     def __init__(self, cognite_client: AsyncCogniteClient, data_model_id: DataModelId):
         self._cognite_client = cognite_client
         self._data_model_id = data_model_id
-        self._views_as_dict: dict[str, View] | None = None
+        self._views_as_dict: dict[str, ViewSchema] | None = None
         self._lock = asyncio.Lock()
 
-    def get_view(self, view_external_id: str) -> View:
+    def get_view(self, view_external_id: str) -> ViewSchema:
         if self._views_as_dict is None:
             raise RuntimeError(
                 "ViewMapper not loaded. Call load_views() before using get_view()."
@@ -52,20 +53,18 @@ class ViewMapper:
                 )
                 views.extend(new_views)
 
-            self._views_as_dict = {view.external_id: view for view in views}
+            self._views_as_dict = {
+                view.external_id: ViewSchema.from_cognite(view) for view in views
+            }
 
 
 class ViewMapperCache(ViewMapper):
-    def __init__(self, views: Sequence[View] | Mapping[str, View]):
-        self._views_as_dict = _index_views(views)
+    def __init__(self, views: Sequence[ViewSchema]):
+        self._views_as_dict = {view.external_id: view for view in views}
         self._lock = asyncio.Lock()
 
     async def load_views(self) -> None:
         return
-
-    @classmethod
-    def from_dumps(cls, dumps: Sequence[dict[str, Any]]) -> Self:
-        return cls([View.load(item) for item in dumps])
 
 
 def collect_new_dependency_view_ids(views: Sequence[View]) -> list[ViewId]:
@@ -103,13 +102,7 @@ def _try_extract_view_ids(view_property: ViewProperty) -> list[ViewId]:
     return list(entries)
 
 
-def _index_views(views: Sequence[View] | Mapping[str, View]) -> dict[str, View]:
-    if isinstance(views, Mapping):
-        return dict(views)
-    return {view.external_id: view for view in views}
-
-
-def _require_view(views: dict[str, View], view_external_id: str) -> View:
+def _require_view(views: dict[str, ViewSchema], view_external_id: str) -> ViewSchema:
     if view_external_id not in views:
         raise ValueError(f"View {view_external_id} is not available in data model")
     return views[view_external_id]

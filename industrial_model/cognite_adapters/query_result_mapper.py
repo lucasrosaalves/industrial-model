@@ -4,25 +4,16 @@ from typing import Any, TypedDict
 
 from cognite.client.data_classes.data_modeling import (
     Edge,
-    EdgeConnection,
-    MappedProperty,
     Node,
     NodeList,
-    View,
-)
-from cognite.client.data_classes.data_modeling.data_types import (
-    ListablePropertyType,
 )
 from cognite.client.data_classes.data_modeling.instances import PropertyValue
-from cognite.client.data_classes.data_modeling.views import (
-    MultiReverseDirectRelation,
-    SingleReverseDirectRelation,
-)
 
 from industrial_model.constants import EDGE_DIRECTION, EDGE_MARKER, NESTED_SEP
 from industrial_model.models import EdgeContainer
 
 from .view_mapper import ViewMapper
+from .view_schema import ViewSchema
 
 
 class ConnectionTypeEnum(StrEnum):
@@ -64,7 +55,7 @@ class QueryResultMapper:
     def _map_node_property(
         self,
         key: str,
-        view: View,
+        view: ViewSchema,
         query_result: dict[str, list[Node | Edge]],
         result_property_key: str | None = None,
     ) -> dict[tuple[str, str], list[Node]] | None:
@@ -163,7 +154,7 @@ class QueryResultMapper:
     def _get_property_mappings(
         self,
         key: str,
-        view: View,
+        view: ViewSchema,
         query_result: dict[str, list[Node | Edge]],
     ) -> dict[str, _PropertyMapping]:
         mappings: dict[str, _PropertyMapping] = {}
@@ -176,37 +167,29 @@ class QueryResultMapper:
             is_list = False
             connection_type: ConnectionTypeEnum = ConnectionTypeEnum.DIRECT_RELATION
 
-            if isinstance(property, MappedProperty) and property.source:
+            if property.kind == "mapped" and property.source:
                 nodes = self._map_node_property(
                     property_key,
                     self._view_mapper.get_view(property.source.external_id),
                     query_result,
                 )
-                is_list = (
-                    isinstance(property.type, ListablePropertyType)
-                    and property.type.is_list
-                )
+                is_list = property.is_list
                 connection_type = ConnectionTypeEnum.DIRECT_RELATION
-            elif isinstance(property, SingleReverseDirectRelation) and property.source:
+            elif property.kind == "reverse" and property.source:
+                if property.through is None:
+                    raise ValueError(
+                        f"Reverse property {property_name} is missing "
+                        "a source or through"
+                    )
                 nodes = self._map_node_property(
                     property_key,
                     self._view_mapper.get_view(property.source.external_id),
                     query_result,
-                    property.through.property,
+                    property.through,
                 )
-                is_list = False
+                is_list = property.is_list
                 connection_type = ConnectionTypeEnum.REVERSE_DIRECT_RELATION
-            elif isinstance(property, MultiReverseDirectRelation) and property.source:
-                nodes = self._map_node_property(
-                    property_key,
-                    self._view_mapper.get_view(property.source.external_id),
-                    query_result,
-                    property.through.property,
-                )
-                is_list = True
-                connection_type = ConnectionTypeEnum.REVERSE_DIRECT_RELATION
-
-            elif isinstance(property, EdgeConnection) and property.source:
+            elif property.kind == "edge" and property.source:
                 nodes, edges = self._map_edge_property(
                     property_key,
                     self._view_mapper.get_view(property.source.external_id),
@@ -229,7 +212,7 @@ class QueryResultMapper:
     def _map_edge_property(
         self,
         key: str,
-        view: View,
+        view: ViewSchema,
         query_result: dict[str, list[Node | Edge]],
         edge_direction: EDGE_DIRECTION,
     ) -> tuple[

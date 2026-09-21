@@ -1,5 +1,6 @@
 from typing import Any
 
+import pytest
 from cognite.client.data_classes.data_modeling import (
     ContainerId,
     MappedProperty,
@@ -12,8 +13,9 @@ from cognite.client.data_classes.data_modeling.data_types import (
 )
 from cognite.client.data_classes.data_modeling.views import MultiEdgeConnection
 
+from industrial_model import ViewProperty, ViewSchema
 from industrial_model.cognite_adapters.upsert_mapper import UpsertMapper
-from industrial_model.cognite_adapters.view_mapper import ViewMapper
+from industrial_model.cognite_adapters.view_mapper import ViewMapperCache
 from industrial_model.models import InstanceId, ViewInstance, WritableViewInstance
 
 
@@ -30,14 +32,6 @@ class SampleAsset(WritableViewInstance):
             ),
             space=self.space,
         )
-
-
-class FakeViewMapper(ViewMapper):
-    def __init__(self, views: dict[str, View]) -> None:
-        self._views = views
-
-    def get_view(self, view_external_id: str) -> View:
-        return self._views[view_external_id]
 
 
 def test_upsert_mode_omits_existing_version_on_nodes() -> None:
@@ -65,6 +59,27 @@ def test_create_mode_sets_existing_version_zero_on_nodes_only() -> None:
     assert "existingVersion" not in operation.edges[0].dump()
 
 
+def test_upsert_raises_when_edge_type_is_missing() -> None:
+    mapper = UpsertMapper(
+        ViewMapperCache(
+            [
+                ViewSchema(
+                    space="test-space",
+                    external_id=SampleAsset.get_view_external_id(),
+                    version="version",
+                    properties={
+                        "name": ViewProperty("mapped"),
+                        "related": ViewProperty("edge"),
+                    },
+                )
+            ]
+        )
+    )
+
+    with pytest.raises(ValueError, match="related is missing a type"):
+        mapper.map([_sample_asset()], remove_unset=False)
+
+
 def _sample_asset() -> SampleAsset:
     return SampleAsset(
         external_id="asset-1",
@@ -74,24 +89,26 @@ def _sample_asset() -> SampleAsset:
     )
 
 
-def _fake_view_mapper() -> FakeViewMapper:
-    return FakeViewMapper(
-        {
-            SampleAsset.get_view_external_id(): _view(
-                SampleAsset,
-                {
-                    "name": _mapped_property("name", Text()),
-                    "related": MultiEdgeConnection(
-                        type=DirectRelationReference("test-space", "relatedTo"),
-                        source=ViewId("test-space", "Target", "version"),
-                        name="related",
-                        description=None,
-                        edge_source=None,
-                        direction="outwards",
-                    ),
-                },
+def _fake_view_mapper() -> ViewMapperCache:
+    return ViewMapperCache(
+        [
+            ViewSchema.from_cognite(
+                _view(
+                    SampleAsset,
+                    {
+                        "name": _mapped_property("name", Text()),
+                        "related": MultiEdgeConnection(
+                            type=DirectRelationReference("test-space", "relatedTo"),
+                            source=ViewId("test-space", "Target", "version"),
+                            name="related",
+                            description=None,
+                            edge_source=None,
+                            direction="outwards",
+                        ),
+                    },
+                )
             )
-        }
+        ]
     )
 
 

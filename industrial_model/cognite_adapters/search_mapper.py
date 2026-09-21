@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 
 import cognite.client.data_classes.filters as filters
-from cognite.client.data_classes.data_modeling import InstanceSort, View
+from cognite.client.data_classes.data_modeling import InstanceSort
 
 from industrial_model.models import TViewInstance
 from industrial_model.statements import SearchOperationTypes, SearchStatement
@@ -11,11 +11,12 @@ from .filter_mapper import (
 )
 from .sort_mapper import SortMapper
 from .view_mapper import ViewMapper
+from .view_schema import ViewSchema
 
 
 @dataclass
 class SearchQuery:
-    view: View
+    view: ViewSchema
     filter: filters.Filter | None
     query: str | None
     query_properties: list[str] | None

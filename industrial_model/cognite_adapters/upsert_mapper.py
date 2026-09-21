@@ -4,8 +4,6 @@ from typing import Any
 from cognite.client.data_classes.data_modeling import (
     DirectRelationReference,
     EdgeApply,
-    EdgeConnection,
-    MappedProperty,
     NodeApply,
     NodeOrEdgeData,
 )
@@ -20,6 +18,7 @@ from industrial_model.models import (
 from industrial_model.utils import datetime_to_ms_iso_timestamp
 
 from .view_mapper import ViewMapper
+from .view_schema import ViewProperty
 
 
 class UpsertMapper:
@@ -74,10 +73,12 @@ class UpsertMapper:
 
             entry = instance.__getattribute__(property_key)
 
-            if isinstance(property, MappedProperty):
+            if property.kind == "mapped":
                 properties[property_name] = self._get_mapped_property_value(entry)
-            elif isinstance(property, EdgeConnection) and isinstance(entry, list):
-                possible_entries = self._map_edges(instance, property, entry)
+            elif property.kind == "edge" and isinstance(entry, list):
+                possible_entries = self._map_edges(
+                    instance, property, property_key, entry
+                )
 
                 previous_edges = {
                     item.as_tuple(): item
@@ -125,17 +126,20 @@ class UpsertMapper:
     def _map_edges(
         self,
         instance: TWritableViewInstance,
-        property: EdgeConnection,
+        property: ViewProperty,
+        property_name: str,
         values: list[Any],
     ) -> dict[tuple[str, str], EdgeApply]:
-        edge_type = InstanceId.model_validate(property.type)
+        if property.edge_type is None:
+            raise ValueError(f"Edge property {property_name} is missing a type")
+        edge_type = InstanceId.model_validate(property.edge_type)
 
         result: dict[tuple[str, str], EdgeApply] = {}
         for value in values:
             if not isinstance(value, InstanceId):
                 raise ValueError(
-                    f"""Invalid value for edge property {property.name}:
-                        Received {type(value)} | Expected: InstanceId"""
+                    f"Invalid value for edge property {property_name}: "
+                    f"Received {type(value)} | Expected: InstanceId"
                 )
 
             start_node, end_node = (
@@ -149,7 +153,7 @@ class UpsertMapper:
             result[edge_id.as_tuple()] = EdgeApply(
                 external_id=edge_id.external_id,
                 space=edge_id.space,
-                type=property.type,
+                type=property.edge_type,
                 start_node=start_node.as_tuple(),
                 end_node=end_node.as_tuple(),
             )

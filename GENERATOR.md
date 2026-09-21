@@ -123,11 +123,11 @@ them; change the data model and run `industrial_model generate` again.
 |------|----------|
 | `__init__.py` | Exports the facade class by name |
 | `{client_module}.py` | Facade class; one attribute per view, each an instance of its view client |
-| `models.py` | All `{View}` writable models and `{View}Aggregation` models |
+| `models.py` | All `{View}` writable models and `{View}Aggregation` models. Relation fields also get `{field}_or_none()` / `require_{field}()` helpers |
 | `filters.py` | All `{View}Filter` typed dicts, one key per filterable property |
 | `types.py` | Literal types: `{View}QueryProperty`, `{View}GroupByProperty`, `{View}AggregationProperty`, `{View}IncludeProperty`, `{View}SortProperty`, plus `{View}Sort` |
 | `clients.py` | All `{View}Client(ViewClient)` classes with typed query methods |
-| `view_mapper.py` | `VIEW_MAPPER_CACHE` built from dumped views (omit with `--no-view-mapper-cache`) |
+| `view_mapper.py` | `VIEW_MAPPER_CACHE` built from `ViewSchema` / `ViewProperty` objects (space, external id, version, and the properties the engine uses), not a full Cognite `View.dump()` (omit with `--no-view-mapper-cache`) |
 
 ---
 
@@ -143,7 +143,7 @@ pagination, and async usage.
 
 1. **Fetch views** — connects to CDF and retrieves the inline-expanded views for the target data model. Dependency views referenced by relations are also retrieved so the generated `ViewMapperCache` is complete (skipped with `--no-view-mapper-cache`).
 2. **Build definitions** — maps each CDF property type to a Python type and resolves relation paths between views.
-3. **Render templates** — Jinja2 templates produce the source files for the package. Dumped views are written to `view_mapper.py` and the facade passes `VIEW_MAPPER_CACHE` into `Engine`. Pass `--no-view-mapper-cache` to skip this and fetch views from CDF at runtime.
+3. **Render templates** — Jinja2 templates produce the source files for the package. `ViewSchema` constructors are written to `view_mapper.py` and the facade passes `VIEW_MAPPER_CACHE` into `Engine`. Pass `--no-view-mapper-cache` to skip this and fetch views from CDF at runtime.
 4. **Format** — runs `ruff format` then `ruff check --fix` on the output directory so the generated code is always clean.
 
 ---

@@ -13,6 +13,7 @@ from .entities import (
     ViewInstanceConfig,
     WritableViewInstance,
 )
+from .relation_helpers import RelationNotIncludedError
 from .schemas import get_parent_and_children_nodes, get_schema_properties
 from .utils import include_edges
 
@@ -29,6 +30,7 @@ __all__ = [
     "IngestionMode",
     "ValidationMode",
     "PaginatedResult",
+    "RelationNotIncludedError",
     "ViewInstanceConfig",
     "get_schema_properties",
     "get_parent_and_children_nodes",

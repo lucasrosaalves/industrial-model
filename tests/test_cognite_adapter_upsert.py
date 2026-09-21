@@ -15,6 +15,7 @@ from cognite.client.data_classes.data_modeling.views import MultiEdgeConnection
 
 from industrial_model.cognite_adapters import CogniteAdapter
 from industrial_model.cognite_adapters.view_mapper import ViewMapperCache
+from industrial_model.cognite_adapters.view_schema import ViewSchema
 from industrial_model.config import DataModelId
 from industrial_model.models import InstanceId, WritableViewInstance
 
@@ -94,7 +95,7 @@ def _adapter(client: _FakeCogniteClient) -> CogniteAdapter:
     return CogniteAdapter(
         client,  # type: ignore[arg-type]
         DataModelId(space="test-space", external_id="model", version="v1"),
-        ViewMapperCache([_asset_view()]),
+        ViewMapperCache([ViewSchema.from_cognite(_asset_view())]),
     )
 
 

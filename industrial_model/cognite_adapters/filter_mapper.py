@@ -2,11 +2,6 @@ from datetime import date, datetime
 from typing import Any
 
 import cognite.client.data_classes.filters as cdf_filters
-from cognite.client.data_classes.data_modeling import (
-    EdgeConnection,
-    MappedProperty,
-    View,
-)
 
 from industrial_model.cognite_adapters.utils import get_property_ref
 from industrial_model.models.entities import InstanceId
@@ -19,6 +14,7 @@ from industrial_model.statements import (
 from industrial_model.utils import datetime_to_ms_iso_timestamp
 
 from .view_mapper import ViewMapper
+from .view_schema import ViewSchema
 
 
 class FilterMapper:
@@ -26,7 +22,7 @@ class FilterMapper:
         self._view_mapper = view_mapper
 
     def map(
-        self, expressions: list[Expression], root_view: View
+        self, expressions: list[Expression], root_view: ViewSchema
     ) -> list[cdf_filters.Filter]:
         result: list[cdf_filters.Filter] = []
         for expression in expressions:
@@ -42,15 +38,17 @@ class FilterMapper:
     def map_edges(
         self,
         edges_expressions: list[tuple[Column, list[Expression]]],
-        root_view: View,
+        root_view: ViewSchema,
         nested_separator: str,
     ) -> dict[str, list[cdf_filters.Filter]]:
         result_dict: dict[str, list[cdf_filters.Filter]] = {}
 
         for column, expressions in edges_expressions:
             view_property = root_view.properties.get(column.property)
-            if not isinstance(view_property, EdgeConnection):
+            if view_property is None or view_property.kind != "edge":
                 raise ValueError(f"Property {column.property} is not an edge")
+            if view_property.source is None:
+                raise ValueError(f"Edge property {column.property} is missing a source")
 
             filters = self.map(
                 expressions,
@@ -62,7 +60,7 @@ class FilterMapper:
         return result_dict
 
     def _to_cdf_filter_bool(
-        self, expression: BoolExpression, root_view: View
+        self, expression: BoolExpression, root_view: ViewSchema
     ) -> cdf_filters.Filter:
         arguments = self.map(expression.filters, root_view)
 
@@ -78,7 +76,7 @@ class FilterMapper:
     def _to_cdf_filter_leaf(
         self,
         expression: LeafExpression,
-        root_view: View,
+        root_view: ViewSchema,
     ) -> cdf_filters.Filter:
         property_ref = get_property_ref(expression.property, root_view)
 
@@ -117,10 +115,11 @@ class FilterMapper:
             return cdf_filters.ContainsAny(property_ref, value_)
         raise NotImplementedError(f"Operator {expression.operator} not implemented")
 
-    def _get_nested_target_view(self, property: str, root_view: View) -> View:
+    def _get_nested_target_view(
+        self, property: str, root_view: ViewSchema
+    ) -> ViewSchema:
         view_definiton = root_view.properties[property]
-        assert isinstance(view_definiton, MappedProperty)
-        assert view_definiton.source
+        assert view_definiton.kind == "mapped" and view_definiton.source
         return self._view_mapper.get_view(view_definiton.source.external_id)
 
     def _handle_type_value_convertion(self, value_: Any) -> Any:

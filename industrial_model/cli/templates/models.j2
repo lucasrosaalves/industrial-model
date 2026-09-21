@@ -8,6 +8,12 @@ from typing import Any
 from pydantic import Field
 
 from industrial_model import AggregatedViewInstance, InstanceId, WritableViewInstance
+from industrial_model.models.relation_helpers import (
+    relation_or_none as _relation_or_none,
+    relations_or_none as _relations_or_none,
+    require_relation as _require_relation,
+    require_relations as _require_relations,
+)
 
 {% for view_definition in view_definitions %}
 
@@ -31,6 +37,33 @@ class {{ view_definition.view_name }}(WritableViewInstance):
             ),
             space=self.space,
         )
+{% for field in view_definition.entity_fields %}
+{% if field.concrete_type %}
+{% if field.is_list %}
+    def {{ field.field_name }}_or_none(self) -> list[{{ field.concrete_type }}]:
+        return _relations_or_none(self.{{ field.field_name }}, {{ field.concrete_type }})
+
+    def require_{{ field.field_name }}(self) -> list[{{ field.concrete_type }}]:
+        return _require_relations(
+            self.{{ field.field_name }},
+            {{ field.concrete_type }},
+            field_name="{{ field.field_alias or field.field_name }}",
+            owner=self,
+        )
+{% else %}
+    def {{ field.field_name }}_or_none(self) -> {{ field.concrete_type }} | None:
+        return _relation_or_none(self.{{ field.field_name }}, {{ field.concrete_type }})
+
+    def require_{{ field.field_name }}(self) -> {{ field.concrete_type }}:
+        return _require_relation(
+            self.{{ field.field_name }},
+            {{ field.concrete_type }},
+            field_name="{{ field.field_alias or field.field_name }}",
+            owner=self,
+        )
+{% endif %}
+{% endif %}
+{% endfor %}
 
 
 class {{ view_definition.view_name }}Aggregation(AggregatedViewInstance):
