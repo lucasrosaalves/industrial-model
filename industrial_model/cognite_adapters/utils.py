@@ -4,8 +4,6 @@ from cognite.client.data_classes.data_modeling import (
     Edge,
     Node,
     NodeListWithCursor,
-    View,
-    ViewId,
 )
 from cognite.client.data_classes.data_modeling.query import (
     Query as CogniteQuery,
@@ -26,6 +24,8 @@ from industrial_model.models import (
     get_parent_and_children_nodes,
 )
 
+from .view_schema import ViewSchema
+
 NODE_PROPERTIES = {
     "externalId",
     "space",
@@ -37,7 +37,7 @@ INTANCE_TYPE = Literal["node", "edge"]
 
 
 def get_property_ref(
-    property: str, view: View | ViewId, instance_type: INTANCE_TYPE = "node"
+    property: str, view: ViewSchema, instance_type: INTANCE_TYPE = "node"
 ) -> tuple[str, str, str] | tuple[str, str]:
     return (
         view.as_property_ref(property)

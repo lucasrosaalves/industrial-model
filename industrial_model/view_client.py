@@ -189,12 +189,14 @@ class ViewClient(
         self,
         entries: list[_T],
         replace: bool = False,
+        remove_unset: bool = False,
         skip_on_version_conflict: bool = False,
         ingestion_mode: IngestionMode = "upsert",
     ) -> None:
         return self._engine.upsert(
             entries,
             replace,
+            remove_unset=remove_unset,
             skip_on_version_conflict=skip_on_version_conflict,
             ingestion_mode=ingestion_mode,
         )
@@ -203,12 +205,14 @@ class ViewClient(
         self,
         entries: list[_T],
         replace: bool = False,
+        remove_unset: bool = False,
         skip_on_version_conflict: bool = False,
         ingestion_mode: IngestionMode = "upsert",
     ) -> None:
         return await self._engine.upsert_async(
             entries,
             replace,
+            remove_unset=remove_unset,
             skip_on_version_conflict=skip_on_version_conflict,
             ingestion_mode=ingestion_mode,
         )

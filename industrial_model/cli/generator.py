@@ -5,7 +5,6 @@ import sys
 from collections.abc import Sequence
 from datetime import UTC, datetime
 from pathlib import Path
-from pprint import pformat
 from typing import Any
 from urllib.parse import urlparse
 
@@ -15,6 +14,10 @@ from cognite.client.data_classes.data_modeling import View
 
 from industrial_model.cognite_adapters.view_mapper import (
     collect_new_dependency_view_ids,
+)
+from industrial_model.cognite_adapters.view_schema import (
+    ViewSchema,
+    render_view_schemas,
 )
 from industrial_model.config import DataModelId
 
@@ -173,8 +176,8 @@ def _write_package_files(
         "data_model_version": repr(data_model.version),
         "default_cluster": repr(cluster),
         "view_mapper_cache": view_mapper_cache,
-        "view_dumps": (
-            pformat([view.dump() for view in cache_views], width=70, sort_dicts=False)
+        "views": (
+            render_view_schemas([ViewSchema.from_cognite(view) for view in cache_views])
             if view_mapper_cache
             else "[]"
         ),

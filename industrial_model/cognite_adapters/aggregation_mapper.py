@@ -9,9 +9,6 @@ from cognite.client.data_classes.aggregations import (
     Min,
     Sum,
 )
-from cognite.client.data_classes.data_modeling import (
-    View,
-)
 
 from industrial_model.models import TAggregatedViewInstance
 from industrial_model.statements import AggregationStatement
@@ -20,11 +17,12 @@ from .filter_mapper import (
     FilterMapper,
 )
 from .view_mapper import ViewMapper
+from .view_schema import ViewSchema
 
 
 @dataclass
 class AggregationQuery:
-    view: View
+    view: ViewSchema
     metric_aggregation: MetricAggregation
     filters: filters.Filter | None
     group_by_columns: list[str]

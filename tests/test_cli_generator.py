@@ -10,14 +10,23 @@ from cognite.client import ClientConfig, CogniteClient
 from cognite.client.config import global_config
 from cognite.client.credentials import Token
 from cognite.client.data_classes.data_modeling import ContainerId, MappedProperty, View
-from cognite.client.data_classes.data_modeling.data_types import DirectRelation, Text
+from cognite.client.data_classes.data_modeling.data_types import (
+    DirectRelation,
+    DirectRelationReference,
+    Text,
+)
 from cognite.client.data_classes.data_modeling.ids import PropertyId, ViewId
-from cognite.client.data_classes.data_modeling.views import MultiReverseDirectRelation
+from cognite.client.data_classes.data_modeling.views import (
+    MultiEdgeConnection,
+    MultiReverseDirectRelation,
+)
 
+from industrial_model import ViewProperty
 from industrial_model.cli.config import GeneratorConfig
 from industrial_model.cli.definitions import ViewDefinition
 from industrial_model.cli.generator import _extract_cluster, generate_from_views
 from industrial_model.config import DataModelId
+from industrial_model.models import InstanceId, RelationNotIncludedError
 
 
 def test_view_definition_maps_cdf_properties_to_model_fields() -> None:
@@ -92,6 +101,28 @@ def test_generate_from_views_writes_compileable_package(
     assert (output_path / "types.py").exists()
     assert (output_path / "models.py").exists()
     assert (output_path / "view_mapper.py").exists()
+    view_mapper_content = (output_path / "view_mapper.py").read_text()
+    assert (
+        "from industrial_model import ViewMapperCache, ViewProperty, ViewSchema"
+        in view_mapper_content
+    )
+    assert "cognite_adapters.view_schema" not in view_mapper_content
+    assert "ViewSchema(" in view_mapper_content
+    assert "ViewProperty(" in view_mapper_content
+    assert '"mapped"' in view_mapper_content
+    assert '"reverse"' in view_mapper_content
+    assert "from_dumps" not in view_mapper_content
+    for leftover in (
+        "lastUpdatedTime",
+        "createdTime",
+        "containerPropertyIdentifier",
+        "writable",
+        "usedFor",
+        "isGlobal",
+        "autoIncrement",
+        "implements",
+    ):
+        assert leftover not in view_mapper_content
     assert (output_path / "py.typed").exists()
     assert not (output_path / "clients_facade.py").exists()
     assert not (output_path / "_view_client.py").exists()
@@ -193,6 +224,14 @@ def test_generate_from_views_writes_compileable_package(
     assert "InstanceId | CogniteEquipment" in models_content
     assert "path: list[InstanceId | CogniteAsset]" in models_content
     assert "files: list[InstanceId | CogniteFile]" not in models_content
+    assert "from industrial_model.models.relation_helpers import" in models_content
+    assert "def parent_or_none(self) -> CogniteAsset | None:" in models_content
+    assert "def require_parent(self) -> CogniteAsset:" in models_content
+    assert "def equipment_or_none(self) -> CogniteEquipment | None:" in models_content
+    assert "def require_equipment(self) -> CogniteEquipment:" in models_content
+    assert "def path_or_none(self) -> list[CogniteAsset]:" in models_content
+    assert "def require_path(self) -> list[CogniteAsset]:" in models_content
+    assert "def require_assets(self) -> list[CogniteAsset]:" in models_content
     assert "class CogniteAssetAggregation(" in models_content
     assert '"group_by_behavior": "NONE"' in models_content
 
@@ -251,6 +290,15 @@ def test_generate_from_views_writes_compileable_package(
     assert client_from_cognite_client.engine._cognite_adapter._view_mapper is (
         cache_module.VIEW_MAPPER_CACHE
     )
+    asset_schema = cache_module.VIEW_MAPPER_CACHE.get_view("CogniteAsset")
+    assert asset_schema.as_property_ref("name") == (
+        "cdf_cdm",
+        "CogniteAsset/v1",
+        "name",
+    )
+    assert asset_schema.properties["parent"].kind == "mapped"
+    assert isinstance(asset_schema.properties["parent"], ViewProperty)
+    assert asset_schema.properties["files"].kind == "reverse"
 
     client_from_token = module.CogniteCoreClient(
         user_token="test-token",
@@ -268,6 +316,34 @@ def test_generate_from_views_writes_compileable_package(
     assert models_module.CogniteAsset.__name__ == "CogniteAsset"
     assert models_module.CogniteEquipment.__name__ == "CogniteEquipment"
     assert models_module.CogniteAssetAggregation.__name__ == "CogniteAssetAggregation"
+    parent = models_module.CogniteAsset(
+        external_id="plant-001",
+        space="production",
+        name="Plant",
+        class_="plant",
+    )
+    equipment = models_module.CogniteEquipment(
+        external_id="pump-001-motor",
+        space="production",
+        name="Pump motor",
+        asset=parent,
+    )
+    asset = models_module.CogniteAsset(
+        external_id="pump-001",
+        space="production",
+        name="Pump 001",
+        class_="pump",
+        parent=parent,
+        equipment=equipment,
+        path=[parent, InstanceId(external_id="ghost", space="production")],
+    )
+    assert asset.parent_or_none() == parent
+    assert asset.require_parent().name == "Plant"
+    assert asset.require_equipment().name == "Pump motor"
+    assert asset.path_or_none() == [parent]
+    with pytest.raises(RelationNotIncludedError):
+        asset.require_path()
+    assert equipment.require_asset().external_id == "plant-001"
     filters_module = importlib.import_module("generated_client.filters")
     assert filters_module.CogniteAssetFilter.__name__ == "CogniteAssetFilter"
     clients_module = importlib.import_module("generated_client.clients")
@@ -301,6 +377,8 @@ def test_generate_from_views_keeps_missing_relation_target_as_instance_id(
     assert (
         "equipment: InstanceId | CogniteEquipment | None = None" not in models_content
     )
+    assert "def require_equipment" not in models_content
+    assert "def parent_or_none(self) -> CogniteAsset | None:" in models_content
 
     filters_content = (output_path / "filters.py").read_text()
     assert "CogniteEquipmentFilter" not in filters_content
@@ -316,6 +394,56 @@ def test_generate_from_views_keeps_missing_relation_target_as_instance_id(
 
     for path in output_path.rglob("*.py"):
         py_compile.compile(str(path), doraise=True)
+
+
+def test_generate_view_mapper_emits_owned_edge_constructors(tmp_path: Path) -> None:
+    output_path = tmp_path / "generated_client"
+    config = GeneratorConfig(
+        client_name="CogniteCoreClient",
+        output_path=output_path,
+        data_model=DataModelId(
+            external_id="CogniteCore",
+            space="cdf_cdm",
+            version="v1",
+        ),
+        base_url="https://westeurope-1.cognitedata.com",
+    )
+
+    generate_from_views(
+        [_asset_view_with_edge(), _equipment_view()],
+        config,
+        overwrite=False,
+    )
+
+    view_mapper_content = (output_path / "view_mapper.py").read_text()
+    assert (
+        "from industrial_model import ViewMapperCache, ViewProperty, ViewSchema"
+        in view_mapper_content
+    )
+    assert "cognite_adapters.view_schema" not in view_mapper_content
+    assert "ViewProperty(" in view_mapper_content
+    assert '"edge"' in view_mapper_content
+    assert "DirectRelationReference(" in view_mapper_content
+    assert 'external_id="relatedTo"' in view_mapper_content
+    assert 'direction="inwards"' in view_mapper_content
+
+    for path in output_path.rglob("*.py"):
+        py_compile.compile(str(path), doraise=True)
+
+    sys.path.insert(0, str(tmp_path))
+    try:
+        _unload_generated_client_modules()
+        cache_module = importlib.import_module("generated_client.view_mapper")
+        related = cache_module.VIEW_MAPPER_CACHE.get_view("CogniteAsset").properties[
+            "related"
+        ]
+        assert related.kind == "edge"
+        assert related.direction == "inwards"
+        assert related.edge_type is not None
+        assert related.edge_type.external_id == "relatedTo"
+    finally:
+        sys.path.pop(0)
+        _unload_generated_client_modules()
 
 
 def test_generate_from_views_can_skip_view_mapper_cache(tmp_path: Path) -> None:
@@ -476,6 +604,19 @@ def _unload_generated_modules(package_name: str) -> None:
     for name in list(sys.modules):
         if name == package_name or name.startswith(f"{package_name}."):
             sys.modules.pop(name, None)
+
+
+def _asset_view_with_edge() -> View:
+    view = _asset_view()
+    view.properties["related"] = MultiEdgeConnection(
+        type=DirectRelationReference("cdf_cdm", "relatedTo"),
+        source=ViewId("cdf_cdm", "CogniteEquipment", "v1"),
+        name="related",
+        description=None,
+        edge_source=None,
+        direction="inwards",
+    )
+    return view
 
 
 def _asset_view(

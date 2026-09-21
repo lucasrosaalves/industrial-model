@@ -30,7 +30,7 @@ Generated facades embed the data model id used during generation, so application
 code does not need to pass `DataModelId` again.
 
 Generated packages include a `ViewMapperCache` by default. The facade
-passes it into `Engine`, so the engine uses the schema captured at
+passes it into `Engine`, so the engine uses the `ViewSchema` captured at
 generation time and does not fetch views from CDF at runtime.
 Pass `--no-view-mapper-cache` when generating if you want the engine to load
 views from CDF instead.
@@ -203,6 +203,56 @@ from the generated query to avoid unnecessary traversal.
 `sort` is a `{View}Sort` typed dict. Keys are sortable fields (`{View}SortProperty`:
 identity fields and non-list mapped properties). Values are `"ascending"` or
 `"descending"`. Multiple keys are applied in insertion order.
+
+---
+
+## Included Relations
+
+Relation fields are typed as a union because the same property stores a reference
+or a loaded entity:
+
+- without `include`, CDF returns `InstanceId`
+- with `include`, CDF returns the generated model (for example `CogniteEquipment`)
+- optional relations can also be `None`
+
+That is why a field looks like
+`equipment: list[InstanceId | CogniteEquipment]` or
+`parent: InstanceId | CogniteAsset | None`. Generated models expose helpers so
+callers do not need `isinstance` asserts after a query.
+
+```python
+assets = client.cognite_asset.query_all_pages(
+    include=["parent", "equipment", "path"],
+)
+
+for asset in assets:
+    parent = asset.parent_or_none()
+    if parent is not None:
+        print(parent.name)
+
+    equipment = asset.require_equipment()
+    print(equipment.name)
+
+    for ancestor in asset.require_path():
+        print(ancestor.name)
+```
+
+If `equipment` is a list relation, `require_equipment()` returns `list[CogniteEquipment]`:
+
+```python
+for item in asset.require_equipment():
+    print(item.name)
+```
+
+| Helper | Returns | When to use |
+|--------|---------|-------------|
+| `{field}_or_none()` | `T \| None` or `list[T]` | Optional; skip unset or unloaded `InstanceId`s |
+| `require_{field}()` | `T` or `list[T]` | You included the relation and expect loaded entities |
+
+`require_{field}()` raises `RelationNotIncludedError` when a singular relation is
+unset or still an `InstanceId`, or when any list item is still an `InstanceId`.
+The error tells you which `include` path to add when the relation was not
+loaded. An empty list is valid and does not raise.
 
 ---
 
@@ -534,6 +584,12 @@ Use `replace=True` to replace properties instead of patching them:
 
 ```python
 client.cognite_asset.upsert([asset], replace=True)
+```
+
+Use `remove_unset=True` to omit properties that were not set on the model. A patch then keeps the stored values for those fields:
+
+```python
+client.cognite_asset.upsert([asset], remove_unset=True)
 ```
 
 Use `ingestion_mode="create"` to insert only (`existingVersion=0`). Combine it with

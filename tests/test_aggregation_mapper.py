@@ -7,7 +7,8 @@ from cognite.client.data_classes.data_modeling.data_types import Text
 
 from industrial_model import AggregatedViewInstance, ViewInstanceConfig, aggregate
 from industrial_model.cognite_adapters.aggregation_mapper import AggregationMapper
-from industrial_model.cognite_adapters.view_mapper import ViewMapper
+from industrial_model.cognite_adapters.view_mapper import ViewMapperCache
+from industrial_model.cognite_adapters.view_schema import ViewSchema
 
 
 class AssetAggregationDefault(AggregatedViewInstance):
@@ -21,14 +22,6 @@ class AssetAggregationNoDefaultGroupBy(AggregatedViewInstance):
         group_by_behavior="NONE",
     )
     name: str | None = None
-
-
-class FakeViewMapper(ViewMapper):
-    def __init__(self, views: dict[str, View]) -> None:
-        self._views = views
-
-    def get_view(self, view_external_id: str) -> View:
-        return self._views[view_external_id]
 
 
 def test_aggregation_mapper_defaults_to_grouping_by_model_fields() -> None:
@@ -55,27 +48,29 @@ def test_aggregation_mapper_explicit_group_by_overrides_config() -> None:
     assert query.group_by_columns == ["name"]
 
 
-def _fake_view_mapper() -> FakeViewMapper:
-    return FakeViewMapper(
-        {
-            "CogniteAsset": View(
-                space="space",
-                external_id="CogniteAsset",
-                version="version",
-                properties={
-                    "name": _mapped_property("name"),
-                },
-                last_updated_time=0,
-                created_time=0,
-                description=None,
-                name=None,
-                filter=None,
-                implements=None,
-                writable=True,
-                is_global=False,
-                used_for="node",
+def _fake_view_mapper() -> ViewMapperCache:
+    return ViewMapperCache(
+        [
+            ViewSchema.from_cognite(
+                View(
+                    space="space",
+                    external_id="CogniteAsset",
+                    version="version",
+                    properties={
+                        "name": _mapped_property("name"),
+                    },
+                    last_updated_time=0,
+                    created_time=0,
+                    description=None,
+                    name=None,
+                    filter=None,
+                    implements=None,
+                    writable=True,
+                    is_global=False,
+                    used_for="node",
+                )
             )
-        }
+        ]
     )
 
 

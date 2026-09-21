@@ -1,10 +1,5 @@
 import cognite.client.data_classes.filters as filters
-from cognite.client.data_classes.data_modeling import (
-    EdgeConnection,
-    MappedProperty,
-    View,
-    ViewId,
-)
+from cognite.client.data_classes.data_modeling import ViewId
 from cognite.client.data_classes.data_modeling.query import (
     EdgeResultSetExpression,
     NodeResultSetExpression,
@@ -14,10 +9,6 @@ from cognite.client.data_classes.data_modeling.query import (
 )
 from cognite.client.data_classes.data_modeling.query import (
     Query as CogniteQuery,
-)
-from cognite.client.data_classes.data_modeling.views import (
-    MultiReverseDirectRelation,
-    SingleReverseDirectRelation,
 )
 
 from industrial_model.constants import EDGE_MARKER, MAX_LIMIT, NESTED_SEP
@@ -29,6 +20,7 @@ from .filter_mapper import (
 )
 from .sort_mapper import SortMapper
 from .view_mapper import ViewMapper
+from .view_schema import ViewSchema
 
 
 class QueryMapper:
@@ -92,7 +84,7 @@ class QueryMapper:
     def _include_statements(
         self,
         key: str,
-        view: View,
+        view: ViewSchema,
         relations_to_include: list[str] | None,
         edge_filters: dict[str, list[filters.Filter]],
         with_: dict[str, ResultSetExpression],
@@ -107,9 +99,9 @@ class QueryMapper:
             if property_key not in relations_to_include:
                 continue
 
-            if isinstance(property, MappedProperty) and not property.source:
+            if property.kind == "mapped" and not property.source:
                 select_properties.append(property_name)
-            elif isinstance(property, MappedProperty) and property.source:
+            elif property.kind == "mapped" and property.source:
                 select_properties.append(property_name)
 
                 props = self._include_statements(
@@ -128,11 +120,13 @@ class QueryMapper:
                     )
                     select_[property_key] = self._get_select(property.source, props)
 
-            elif (
-                isinstance(property, MultiReverseDirectRelation)
-                or isinstance(property, SingleReverseDirectRelation)
-                and property.source
-            ):
+            elif property.kind == "reverse":
+                if property.source is None or property.through is None:
+                    raise ValueError(
+                        f"Reverse property {property_name} is missing "
+                        "a source or through"
+                    )
+
                 props = self._include_statements(
                     property_key,
                     self._view_mapper.get_view(property.source.external_id),
@@ -145,15 +139,20 @@ class QueryMapper:
                 with_[property_key] = NodeResultSetExpression(
                     from_=key,
                     direction="inwards",
-                    through=property.source.as_property_ref(property.through.property),
+                    through=property.source.as_property_ref(property.through),
                     limit=MAX_LIMIT,
                 )
 
-                if property.through.property not in props:
-                    props.append(property.through.property)
+                if property.through not in props:
+                    props.append(property.through)
 
                 select_[property_key] = self._get_select(property.source, props)
-            elif isinstance(property, EdgeConnection) and property.source:
+            elif property.kind == "edge":
+                if property.source is None or property.edge_type is None:
+                    raise ValueError(
+                        f"Edge property {property_name} is missing a source or type"
+                    )
+
                 edge_property_key = f"{property_key}{NESTED_SEP}{EDGE_MARKER}"
 
                 edge_filter = edge_filters.get(property_key)
@@ -163,7 +162,7 @@ class QueryMapper:
                     max_distance=1,
                     filter=filters.Equals(
                         ["edge", "type"],
-                        property.type.dump(),
+                        property.edge_type.dump(),
                     ),
                     node_filter=filters.And(*edge_filter) if edge_filter else None,
                     direction=property.direction,

@@ -1,5 +1,7 @@
 """Unit tests for model utilities and functionality."""
 
+from pydantic import Field
+
 from industrial_model import (
     AggregatedViewInstance,
     InstanceId,
@@ -246,7 +248,6 @@ def test_view_instance_config() -> None:
 
 def test_model_with_field_alias() -> None:
     """Test model with field aliases."""
-    from pydantic import Field
 
     class ModelWithAlias(ViewInstance):
         field_name: str = Field(alias="camelCaseName")

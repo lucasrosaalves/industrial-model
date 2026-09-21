@@ -1,3 +1,4 @@
+from .cognite_adapters.view_schema import ViewProperty, ViewSchema
 from .config import DataModelId
 from .constants import RelationMode
 from .engines import AsyncEngine, Engine, ViewMapperCache
@@ -6,6 +7,7 @@ from .models import (
     IngestionMode,
     InstanceId,
     PaginatedResult,
+    RelationNotIncludedError,
     RootModel,
     TAggregatedViewInstance,
     TViewInstance,
@@ -46,7 +48,10 @@ __all__ = [
     "Engine",
     "AsyncEngine",
     "ViewMapperCache",
+    "ViewProperty",
+    "ViewSchema",
     "PaginatedResult",
+    "RelationNotIncludedError",
     "RootModel",
     "RelationMode",
     "SearchOperationTypes",

@@ -7,13 +7,17 @@ from cognite.client.data_classes.data_modeling.data_types import Text
 
 from industrial_model import AsyncEngine, Engine, ViewMapperCache
 from industrial_model.cognite_adapters.view_mapper import ViewMapper
+from industrial_model.cognite_adapters.view_schema import ViewSchema
 
 from .test_engine_setup import DATA_MODEL_ID
 
 
 def test_view_mapper_cache_returns_preloaded_views() -> None:
     cache = ViewMapperCache(
-        [_name_view("CogniteAsset"), _name_view("CogniteEquipment")]
+        [
+            ViewSchema.from_cognite(_name_view("CogniteAsset")),
+            ViewSchema.from_cognite(_name_view("CogniteEquipment")),
+        ]
     )
 
     assert cache.get_view("CogniteAsset").external_id == "CogniteAsset"
@@ -21,32 +25,23 @@ def test_view_mapper_cache_returns_preloaded_views() -> None:
 
 
 def test_view_mapper_cache_raises_for_unknown_view() -> None:
-    cache = ViewMapperCache([_name_view("CogniteAsset")])
+    cache = ViewMapperCache([ViewSchema.from_cognite(_name_view("CogniteAsset"))])
 
     with pytest.raises(ValueError, match="CogniteEquipment is not available"):
         cache.get_view("CogniteEquipment")
 
 
 def test_view_mapper_cache_load_views_is_noop() -> None:
-    cache = ViewMapperCache([_name_view("CogniteAsset")])
+    cache = ViewMapperCache([ViewSchema.from_cognite(_name_view("CogniteAsset"))])
 
     asyncio.run(cache.load_views())
 
     assert cache.get_view("CogniteAsset").external_id == "CogniteAsset"
 
 
-def test_view_mapper_cache_roundtrips_dumps() -> None:
-    view = _name_view("CogniteAsset")
-    cache = ViewMapperCache.from_dumps([view.dump()])
-
-    loaded = cache.get_view("CogniteAsset")
-    assert loaded.external_id == "CogniteAsset"
-    assert "name" in loaded.properties
-
-
 def test_engine_uses_view_mapper_cache() -> None:
     global_config.disable_pypi_version_check = True
-    cache = ViewMapperCache([_name_view("CogniteAsset")])
+    cache = ViewMapperCache([ViewSchema.from_cognite(_name_view("CogniteAsset"))])
     engine = Engine.from_user_token(
         user_token="user-token",
         project="project",
@@ -61,7 +56,7 @@ def test_engine_uses_view_mapper_cache() -> None:
 
 def test_async_engine_uses_view_mapper_cache() -> None:
     global_config.disable_pypi_version_check = True
-    cache = ViewMapperCache([_name_view("CogniteAsset")])
+    cache = ViewMapperCache([ViewSchema.from_cognite(_name_view("CogniteAsset"))])
     engine = AsyncEngine.from_user_token(
         user_token="user-token",
         project="project",
