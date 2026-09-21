@@ -606,6 +606,40 @@ def _unload_generated_modules(package_name: str) -> None:
             sys.modules.pop(name, None)
 
 
+def test_generate_from_views_formats_when_downstream_ruff_excludes_output(
+    tmp_path: Path,
+) -> None:
+    package = tmp_path / "pkg"
+    output_path = package / "generated_client"
+    package.mkdir()
+    (package / "pyproject.toml").write_text(
+        '[tool.ruff]\nexclude = ["generated_client/**/*.py"]\n',
+        encoding="utf-8",
+    )
+    config = GeneratorConfig(
+        client_name="CogniteCoreClient",
+        output_path=output_path,
+        data_model=DataModelId(
+            external_id="CogniteCore",
+            space="cdf_cdm",
+            version="v1",
+        ),
+        base_url="https://westeurope-1.cognitedata.com",
+    )
+
+    generate_from_views(
+        [_asset_view(include_equipment=True), _equipment_view(), _file_view()],
+        config,
+        overwrite=False,
+    )
+
+    models_content = (output_path / "models.py").read_text()
+    assert "\n\n\n\n" not in models_content
+    assert "    name: str\n    aliases:" in models_content
+    clients_content = (output_path / "clients.py").read_text()
+    assert "from .filters import (\n\n" not in clients_content
+
+
 def _asset_view_with_edge() -> View:
     view = _asset_view()
     view.properties["related"] = MultiEdgeConnection(

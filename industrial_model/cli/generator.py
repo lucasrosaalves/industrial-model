@@ -28,6 +28,11 @@ from .helpers import to_snake
 _RESERVED_PACKAGE_MODULES = frozenset(
     {"clients", "filters", "models", "types", "view_mapper"}
 )
+_RUFF_ISOLATED = (
+    "--isolated",
+    "--config",
+    "line-length=88",
+)
 
 
 def generate(config: GeneratorConfig, *, overwrite: bool = False) -> None:
@@ -247,9 +252,22 @@ def _extract_cluster(base_url: str | None) -> str | None:
 
 
 def _format_output_path(output_path: Path) -> None:
-    _run_ruff(["format", str(output_path)])
-    _run_ruff(["check", "--fix", str(output_path)])
-    _run_ruff(["format", str(output_path)])
+    # --isolated ignores a downstream pyproject.toml that excludes generated files.
+    target = str(output_path)
+    _run_ruff(["format", *_RUFF_ISOLATED, target])
+    _run_ruff(
+        [
+            "check",
+            "--fix",
+            *_RUFF_ISOLATED,
+            "--select",
+            "E,W,F,I,B,C4,UP",
+            "--ignore",
+            "B008,C901,W191",
+            target,
+        ]
+    )
+    _run_ruff(["format", *_RUFF_ISOLATED, target])
 
 
 def _run_ruff(args: list[str]) -> None:
