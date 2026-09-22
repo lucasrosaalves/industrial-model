@@ -16,13 +16,17 @@ _GRANULARITY_RE = re.compile(
     r"^(\d+)"
     r"(months|month|mo|minutes|minute|mins|min|"
     r"seconds|second|secs|sec|"
+    r"quarters|quarter|"
+    r"years|year|"
     r"hours|hour|hrs|hr|"
     r"days|day|"
     r"weeks|week|wks|wk|"
-    r"s|m|h|d|w)$",
+    r"s|m|h|d|w|q|y|t)$",
     re.IGNORECASE,
 )
 
+# Normalized units: s, m, h, d, w, mo, q, y. Same spellings the Cognite SDK
+# accepts (``t`` is its alias for minutes).
 _UNIT_ALIASES = {
     "s": "s",
     "sec": "s",
@@ -30,6 +34,7 @@ _UNIT_ALIASES = {
     "second": "s",
     "seconds": "s",
     "m": "m",
+    "t": "m",
     "min": "m",
     "mins": "m",
     "minute": "m",
@@ -50,7 +55,17 @@ _UNIT_ALIASES = {
     "mo": "mo",
     "month": "mo",
     "months": "mo",
+    "q": "q",
+    "quarter": "q",
+    "quarters": "q",
+    "y": "y",
+    "year": "y",
+    "years": "y",
 }
+
+# Units whose buckets follow the calendar rather than a fixed length.
+CALENDAR_UNITS = frozenset({"mo", "q", "y"})
+_MONTHS_PER_UNIT = {"mo": 1, "q": 3, "y": 12}
 
 
 def formula_uses_rolling_average(formula: str) -> bool:
@@ -175,7 +190,7 @@ def _step(
     elif unit == "w":
         shifted = _shift_wall(local, days=7 * delta)
     else:
-        shifted = _shift_months(local, delta)
+        shifted = _shift_months(local, delta * _MONTHS_PER_UNIT[unit])
     return shifted.astimezone(UTC)
 
 
