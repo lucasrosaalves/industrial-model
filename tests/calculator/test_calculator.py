@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import UTC, datetime
+from collections.abc import Sequence
+from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock
+from zoneinfo import ZoneInfo
 
 import pytest
 from cognite.client.data_classes.datapoint_aggregates import Aggregate
-from cognite.client.data_classes.datapoints import Datapoints
+from cognite.client.data_classes.datapoints import Datapoints, DatapointsQuery
 
 from industrial_model.calculator import (
     Calculator,
@@ -462,6 +464,150 @@ def test_calculate_forwards_timezone_on_a_single_query() -> None:
 
     query = client.time_series.data.retrieve.call_args.kwargs["instance_id"][0]
     assert query.timezone == "UTC+05:30"
+
+
+_HOUR_MS = 3_600_000
+# A lone aggregate series gets the SDK's whole 10_000-point budget on its
+# first page; the mocks below cut there and stop, like the SDK does when the
+# page carries no cursor.
+_AGGREGATE_PAGE = 10_000
+
+
+def _hour_ms(start: datetime, count: int) -> list[int]:
+    start_ms = _ms(start.astimezone(UTC))
+    return [start_ms + i * _HOUR_MS for i in range(count)]
+
+
+def _as_ms(value: int | datetime) -> int:
+    if isinstance(value, int):
+        return value
+    return _ms(value)
+
+
+def _paging_aggregate_client(
+    timestamps: Sequence[int],
+    *,
+    aggregate: str = "average",
+    page_size: int = _AGGREGATE_PAGE,
+) -> MagicMock:
+    """Return at most ``page_size`` aggregate points per retrieve call.
+
+    Models the SDK stopping after a full timezone/calendar page. The next call
+    must start after the last timestamp it already returned.
+    """
+
+    seen_starts: list[int] = []
+
+    async def retrieve(
+        *, instance_id: Sequence[DatapointsQuery], **_: object
+    ) -> list[Datapoints]:
+        pages: list[Datapoints] = []
+        for query in instance_id:
+            start_ms = _as_ms(query.start)  # type: ignore[arg-type]
+            end_ms = _as_ms(query.end)  # type: ignore[arg-type]
+            seen_starts.append(start_ms)
+            selected = [ts for ts in timestamps if start_ms <= ts < end_ms][:page_size]
+            dp = Datapoints(
+                id=1,
+                is_string=False,
+                is_step=False,
+                type="numeric",
+                external_id="x",
+                instance_id=MagicMock(space="s", external_id="x"),
+                timestamp=selected,
+            )
+            setattr(dp, aggregate, [float(ts) for ts in selected])
+            pages.append(dp)
+        return pages
+
+    client = MagicMock()
+    client.time_series.data.retrieve = AsyncMock(side_effect=retrieve)
+    client.get_async_client.return_value = client
+    client.seen_starts = seen_starts
+    return client
+
+
+def _result_ms(result: CalculationResult) -> list[int]:
+    return [_ms(dp.timestamp) for dp in result.datapoints]
+
+
+def test_calculate_multiples_pages_timezone_hourly_aggregates_past_first_page() -> None:
+    denver = ZoneInfo("America/Denver")
+    start = datetime(2026, 2, 19, 9, tzinfo=denver)
+    page = _AGGREGATE_PAGE
+    timestamps = _hour_ms(start, 2 * page + 500)
+    end = datetime.fromtimestamp((timestamps[-1] + _HOUR_MS) / 1000, UTC)
+    client = _paging_aggregate_client(timestamps)
+    param = _make_param_with_aggregate("A", "average", "1h")
+
+    result = _calculate_multiples(
+        Calculator(client),
+        [_make_query("{A}", [param])],
+        start,
+        end,
+        timezone="America/Denver",
+    )[0]
+
+    got = _result_ms(result)
+    assert got == timestamps
+    assert len(got) > page
+    assert got.count(timestamps[page - 1]) == 1
+    assert got[page] == timestamps[page]
+    assert got[2 * page] == timestamps[2 * page]
+    assert got[page] - got[page - 1] == _HOUR_MS
+
+    assert client.time_series.data.retrieve.call_count == 3
+    first_start, second_start, third_start = client.seen_starts
+    assert first_start == timestamps[0]
+    assert timestamps[page - 1] < second_start <= timestamps[page]
+    assert timestamps[2 * page - 1] < third_start <= timestamps[2 * page]
+
+
+def test_calculate_multiples_keeps_repeated_dst_fallback_hour() -> None:
+    denver = ZoneInfo("America/Denver")
+    first_one_am = datetime(2026, 11, 1, 1, tzinfo=denver, fold=0)
+    second_one_am = datetime(2026, 11, 1, 1, tzinfo=denver, fold=1)
+    first_ms = _ms(first_one_am)
+    second_ms = _ms(second_one_am)
+    # Put the page boundary right on the repeated local hour.
+    boundary = _AGGREGATE_PAGE - 1
+    timestamps = [
+        first_ms + (i - boundary) * _HOUR_MS for i in range(_AGGREGATE_PAGE + 5)
+    ]
+    assert timestamps[boundary] == first_ms
+    assert timestamps[boundary + 1] == second_ms
+    assert second_ms - first_ms == _HOUR_MS
+
+    start = datetime.fromtimestamp(timestamps[0] / 1000, UTC)
+    end = datetime.fromtimestamp((timestamps[-1] + _HOUR_MS) / 1000, UTC)
+    client = _paging_aggregate_client(timestamps)
+    param = _make_param_with_aggregate("A", "average", "1h")
+
+    result = _calculate_multiples(
+        Calculator(client),
+        [_make_query("{A}", [param])],
+        start,
+        end,
+        timezone="America/Denver",
+    )[0]
+
+    got = _result_ms(result)
+    assert got == timestamps
+    assert got.count(first_ms) == 1
+    assert got.count(second_ms) == 1
+
+    def _local(ms: int) -> datetime:
+        return datetime.fromtimestamp(ms / 1000, UTC).astimezone(denver)
+
+    first_local, second_local = _local(got[boundary]), _local(got[boundary + 1])
+    assert (first_local.month, first_local.day, first_local.hour) == (11, 1, 1)
+    assert (second_local.month, second_local.day, second_local.hour) == (11, 1, 1)
+    assert first_local.utcoffset() == timedelta(hours=-6)
+    assert second_local.utcoffset() == timedelta(hours=-7)
+
+    assert client.time_series.data.retrieve.call_count == 2
+    next_start = client.seen_starts[1]
+    assert first_ms < next_start <= second_ms
 
 
 # ---------------------------------------------------------------------------

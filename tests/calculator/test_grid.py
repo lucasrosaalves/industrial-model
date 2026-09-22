@@ -23,11 +23,36 @@ def test_parse_granularity_accepts_short_and_long_units() -> None:
     assert parse_granularity("1mo") == (1, "mo")
     assert parse_granularity("2hours") == (2, "h")
     assert parse_granularity("1day") == (1, "d")
+    assert parse_granularity("1q") == (1, "q")
+    assert parse_granularity("2quarters") == (2, "q")
+    assert parse_granularity("1y") == (1, "y")
+    assert parse_granularity("3t") == (3, "m")
 
 
 def test_parse_granularity_rejects_unknown() -> None:
-    assert parse_granularity("1q") is None
+    assert parse_granularity("1fortnight") is None
     assert parse_granularity("") is None
+
+
+def test_build_grid_steps_quarters_and_years_by_calendar_months() -> None:
+    start = datetime(2024, 1, 1, tzinfo=UTC)
+    quarters = build_bucket_grid(
+        start, datetime(2025, 1, 1, tzinfo=UTC), "1q", None, [start]
+    )
+    assert quarters == [
+        datetime(2024, 1, 1, tzinfo=UTC),
+        datetime(2024, 4, 1, tzinfo=UTC),
+        datetime(2024, 7, 1, tzinfo=UTC),
+        datetime(2024, 10, 1, tzinfo=UTC),
+    ]
+    years = build_bucket_grid(
+        start, datetime(2027, 1, 1, tzinfo=UTC), "1y", None, [start]
+    )
+    assert years == [
+        datetime(2024, 1, 1, tzinfo=UTC),
+        datetime(2025, 1, 1, tzinfo=UTC),
+        datetime(2026, 1, 1, tzinfo=UTC),
+    ]
 
 
 def test_shared_aggregate_granularity_requires_a_uniform_aggregate() -> None:
