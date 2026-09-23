@@ -24,7 +24,6 @@ class StageTimer:
     def __init__(self) -> None:
         self.durations: dict[str, float] = {}
         self.unique_timeseries = 0
-        self.cdf_chunks = 0
         self._started_at = time.perf_counter()
 
     @contextmanager
@@ -47,7 +46,6 @@ class StageTimer:
             f"status={'ok' if ok else 'error'}",
             f"queries={queries}",
             f"unique_timeseries={self.unique_timeseries}",
-            f"cdf_chunks={self.cdf_chunks}",
         ]
         summary = {name: self.durations.get(name, 0.0) for name in _SUMMARY_STAGES}
         for name in _SUMMARY_STAGES:

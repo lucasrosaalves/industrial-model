@@ -4,7 +4,7 @@ The `industrial_model.calculator` package computes derived time series from raw 
 
 It's built from three layers:
 
-- **`Calculator`** — the CDF-facing layer. Resolves `CalculatorQuery` objects into datapoint requests, retrieves and deduplicates them concurrently via the async CDF client, and evaluates the formula over the results. `calculate` and `calculate_multiples` are async.
+- **`Calculator`** — the CDF-facing layer. Resolves `CalculatorQuery` objects into datapoint requests, deduplicates them, retrieves them in a single SDK call via the async CDF client, and evaluates the formula over the results. `calculate` and `calculate_multiples` are async.
 - **`DatapointsRetriever` / `SeriesReducer`** — build deduplicated CDF requests per unique (time series, aggregate, granularity), and combine multiple time series into one when a parameter references more than one.
 - **`formula_expression.evaluate`** — a standalone, CDF-free formula engine. It compiles a small, safe arithmetic expression language (a restricted subset of Python) to an AST and evaluates it over plain numeric sequences. It has no dependency on `Calculator` and can be used on its own for testing or non-CDF data.
 
@@ -65,7 +65,7 @@ Each `DataPoint.timestamp` comes from the **shared time axis** of the query's ti
 
 ### Batching multiple queries
 
-Use `calculate_multiples` when you need several formulas evaluated over the same window. All time-series parameters across all queries are fetched in one retrieval pass. Identical time series requests (same instance id, aggregate, and granularity) are deduplicated even across queries. Requests are then sent in chunks of 100 series (the CDF limit), and those chunks are fetched concurrently. Pass keyword-only ``timezone=`` so every hour-and-longer aggregate in the batch uses the same calendar (see [Calendar timezones](#calendar-timezones)):
+Use `calculate_multiples` when you need several formulas evaluated over the same window. All time-series parameters across all queries are fetched in one retrieval pass. Identical time series requests (same instance id, aggregate, and granularity) are deduplicated even across queries. All of them go to CDF in **one** SDK `retrieve` call; the SDK packs them into requests of up to 100 series and pages each to the end, using `global_config.concurrency_settings.datapoints.read` requests in flight (raise it before the first request for large batches). Pass keyword-only ``timezone=`` so every hour-and-longer aggregate in the batch uses the same calendar (see [Calendar timezones](#calendar-timezones)):
 
 ```python
 results = await calculator.calculate_multiples(
@@ -90,7 +90,11 @@ logging.basicConfig()
 logging.getLogger("industrial_model.calculator").setLevel(logging.DEBUG)
 ```
 
-Each `calculate` / `calculate_multiples` call then logs a single-line stage breakdown (`build_requests`, `retrieve`, `parse`, `reduce`, `align`, `evaluate`, `assemble`) and names the bottleneck — the exclusive stage that took the longest. The summary is emitted even if the call fails (`status=error`). CDF retrieve is shared across all queries in a `calculate_multiples` batch, so it appears once in the summary. DEBUG also logs each CDF chunk (fetched concurrently when there are more than 100 unique series) and each query's formula, input lengths, and aligned point count.
+Each `calculate` / `calculate_multiples` call then logs a single-line stage breakdown (`build_requests`, `retrieve`, `parse`, `reduce`, `align`, `evaluate`, `assemble`) and names the bottleneck — the exclusive stage that took the longest. The summary is emitted even if the call fails (`status=error`). CDF retrieve is shared across all queries in a `calculate_multiples` batch, so it appears once in the summary. DEBUG also logs the retrieve (series count and duration) and each query's formula, input lengths, and aligned point count.
+
+### One calculation at a time per client
+
+Run `calculate` / `calculate_multiples` one after another on a given `CogniteClient`. Cognite SDK 8.x shares one datapoints request semaphore per client, and a `retrieve` that finds it exhausted returns only the first page of every series, with no error. A single call already uses the SDK's full read concurrency. The retriever asks again when a page is long enough to be that first page and stops when a page brings nothing new; that does not make overlapping calls on the same client safe.
 
 ---
 
@@ -660,7 +664,7 @@ result = await calculator.calculate(query, start, end)
 | `_timing.py` | `StageTimer` — exclusive wall-clock timings for DEBUG stage summaries. No-op when the calculator logger is not at DEBUG. |
 | `_timezone.py` | Resolves IANA / UTC-offset strings to ``tzinfo`` when stepping hour+ rolling-average grids. Public ``timezone=`` is not validated here. |
 | `_grid.py` | Bucket-grid construction for `rolling_average` over a uniform CDF granularity (fixed steps for sub-hour; local calendar for hour+). |
-| `datapoints_retrieval.py` | `DatapointsRetriever` — fetching only: builds deduplicated `DatapointsQuery` requests per unique (time series, aggregate, granularity), retrieves CDF chunks of up to 100 series concurrently, and parses responses into `(timestamp, value)` pairs (dropping `None` values). Returns one *unreduced* series per instance id — combining them is the caller's job. Optional retrieve ``timezone`` is applied to every aggregate in the batch (omitted from the query when unset). |
+| `datapoints_retrieval.py` | `DatapointsRetriever` — fetching only: builds deduplicated `DatapointsQuery` requests per unique (time series, aggregate, granularity), retrieves them in one SDK call (and asks again when a page is long enough to be truncated), and parses responses into `(timestamp, value)` pairs (dropping `None` values). Returns one *unreduced* series per instance id — combining them is the caller's job. Optional retrieve ``timezone`` is applied to every aggregate in the batch (omitted from the query when unset). |
 | `series_reducer.py` | `SeriesReducer` — timestamp intersection via a sorted k-way merge. `reduce` combines several series into one with `min`/`max`/`sum`/`average`; `align` filters several series onto their common timestamps. Both normalize every input first (sort by timestamp, collapse duplicate timestamps to their last value), including the single-series case, so output never depends on how many series were passed. Used by `Calculator` for `MultiTimeSeriesParameter` and for formula-level `intersect` alignment. |
 | `models.py` | Query models are Pydantic: `CalculatorParameter` (discriminated union), `ConstantParameter`, `TimeSeriesParameter`, `MultiTimeSeriesParameter`, `TimeSeriesParameterBase` (shared fields, not itself part of the union), `ReducerType`, `AlignmentMode`, `Series` (the `list[(timestamp, value)]` alias used throughout), `CalculatorQuery` (validates unique parameter aliases). Output types are not Pydantic — validation per datapoint was the assemble bottleneck — so `DataPoint` is a `NamedTuple` and `CalculationResult` is a frozen dataclass. |
 | `exceptions.py` | `CalculatorError`, the root every other exception in the package derives from, and `DatapointsRetrievalError` for unusable CDF responses. |

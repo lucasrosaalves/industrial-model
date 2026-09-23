@@ -1,16 +1,15 @@
 from __future__ import annotations
 
-import asyncio
 import logging
+import math
 import time
 from collections.abc import Sequence
 from datetime import UTC, datetime
 from typing import cast
 
-from cognite.client import AsyncCogniteClient
+from cognite.client import AsyncCogniteClient, global_config
 from cognite.client.data_classes.datapoints import Datapoints, DatapointsQuery
 
-from ._grid import CALENDAR_UNITS, parse_granularity
 from ._timezone import to_utc
 from ._timing import StageTimer, timed
 from .exceptions import DatapointsRetrievalError
@@ -18,14 +17,13 @@ from .models import Series, TimeSeriesParameterBase
 
 logger = logging.getLogger(__name__)
 
-# Cognite's datapoints retrieve endpoint only accepts up to 100 time series
-# per request, so larger requests must be chunked client-side. Chunks are
-# fetched concurrently.
-_MAX_TIME_SERIES_PER_REQUEST = 100
-
-# ``DatapointsAPI._DPS_LIMIT_AGG``: the aggregate points one SDK request may
-# return, shared by the aggregate series that request carries.
+# Mirrors of the SDK's request planning (``DatapointsAPI`` /
+# ``ChunkingDpsFetcher._create_initial_tasks``): the points one request may
+# return for aggregate and raw series respectively, and the most time series
+# one request may carry.
 _AGGREGATE_POINT_BUDGET = 10_000
+_RAW_POINT_BUDGET = 100_000
+_MAX_TIME_SERIES_PER_REQUEST = 100
 
 
 class DatapointsRetriever:
@@ -40,49 +38,27 @@ class DatapointsRetriever:
         timer: StageTimer | None = None,
         timezone: str | None = None,
     ) -> list[list[Series]]:
-        """Fetch datapoints for every parameter's time series, unreduced.
-
-        Returns one entry per parameter, each holding one series per
-        ``timeseries_instance_id`` it references, in that order. Combining a
-        parameter's series (when it references more than one) is the
-        caller's responsibility - this class only retrieves and parses data.
-
-        ``timezone`` is applied to every aggregate request in this retrieve
-        and omitted from the query when unset. Aggregates with a timezone or a
-        calendar granularity are requested again after each full page until
-        the window is covered; raw queries and other aggregates are retrieved
-        once. Naive ``start`` / ``end`` are read as UTC, like the rest of the
-        calculator.
-        """
         with timed(timer, "build_requests"):
             requests, index_mapping = self._build_requests(
                 parameters, start, end, timezone
             )
 
-        chunks = [
-            requests[i : i + _MAX_TIME_SERIES_PER_REQUEST]
-            for i in range(0, len(requests), _MAX_TIME_SERIES_PER_REQUEST)
-        ]
-        n_chunks = len(chunks)
         if timer is not None:
             timer.unique_timeseries = len(requests)
-            timer.cdf_chunks = n_chunks
-        log_debug = logger.isEnabledFor(logging.DEBUG)
-        if log_debug:
-            logger.debug(
-                "built %s unique timeseries request(s) for %s parameter(s)",
-                len(requests),
-                len(parameters),
-            )
+        logger.debug(
+            "built %s unique timeseries request(s) for %s parameter(s)",
+            len(requests),
+            len(parameters),
+        )
 
         with timed(timer, "retrieve"):
-            responses = await asyncio.gather(
-                *(
-                    self._retrieve_chunk(chunk, chunk_no, n_chunks, log_debug)
-                    for chunk_no, chunk in enumerate(chunks, start=1)
-                )
+            started = time.perf_counter()
+            raw = await self._retrieve_paged(requests)
+            logger.debug(
+                "retrieve: %s series in %.3fs",
+                len(requests),
+                time.perf_counter() - started,
             )
-        raw = [dp for response in responses for dp in response]
 
         with timed(timer, "parse"):
             return [
@@ -92,54 +68,32 @@ class DatapointsRetriever:
                 )
             ]
 
-    async def _retrieve_chunk(
-        self,
-        chunk: list[DatapointsQuery],
-        chunk_no: int,
-        n_chunks: int,
-        log_debug: bool,
-    ) -> Sequence[Datapoints]:
-        started = time.perf_counter() if log_debug else None
-        if any(_needs_manual_paging(query) for query in chunk):
-            response = await self._retrieve_paged(chunk)
-        else:
-            response = await self._fetch_series(chunk)
-        if started is not None:
-            logger.debug(
-                "retrieve chunk %s/%s: %s series in %.3fs",
-                chunk_no,
-                n_chunks,
-                len(chunk),
-                time.perf_counter() - started,
-            )
-        return response
-
     async def _fetch_series(
         self, queries: Sequence[DatapointsQuery]
     ) -> list[Datapoints]:
         response = await self._client.time_series.data.retrieve(instance_id=queries)
         return _coerce_series(response, len(queries))
 
-    async def _retrieve_paged(self, chunk: list[DatapointsQuery]) -> list[Datapoints]:
-        """Ask again after a full page, starting just after its last timestamp.
+    async def _retrieve_paged(self, queries: list[DatapointsQuery]) -> list[Datapoints]:
+        """Ask again after a possibly full page, from just after its last point.
 
-        A series is finished once a page is shorter than the smallest page
-        the SDK could have handed it, or brings nothing new. CDF may round the
-        advanced ``start`` down to the bucket that was already returned;
-        ``_append_datapoints`` drops that overlap.
+        A series is finished once a page is shorter than the smallest first
+        page the SDK could have handed it (see ``_min_page_sizes``), or brings
+        nothing new. CDF may round the advanced ``start`` down to the bucket
+        that was already returned; ``_append_datapoints`` drops that overlap.
 
         ``query.start`` is advanced in place. The queries are created for one
         ``retrieve_datapoints`` call and the SDK copies them before use, so
         nothing else observes the mutation.
         """
 
-        pending = list(range(len(chunk)))
-        merged: list[Datapoints | None] = [None] * len(chunk)
-        columns = [_aggregate_names(query) for query in chunk]
+        pending = list(range(len(queries)))
+        merged: list[Datapoints | None] = [None] * len(queries)
+        columns = [_value_columns(query) for query in queries]
         while pending:
-            batch = [chunk[index] for index in pending]
+            batch = [queries[index] for index in pending]
             pages = await self._fetch_series(batch)
-            full_page = _min_page_size(batch)
+            full_aggregate, full_raw = _min_page_sizes(batch)
             still_open: list[int] = []
             for index, page in zip(pending, pages, strict=True):
                 stored = merged[index]
@@ -147,21 +101,18 @@ class DatapointsRetriever:
                     stored = _blank_datapoints(page)
                     merged[index] = stored
                 added = _append_datapoints(stored, page, columns[index])
-                query = chunk[index]
-                if (
-                    added == 0
-                    or len(page.timestamp) < full_page
-                    or not _needs_manual_paging(query)
-                ):
+                query = queries[index]
+                full_page = full_aggregate if _is_aggregate(query) else full_raw
+                if added == 0 or len(page.timestamp) < full_page:
                     continue
                 query.start = int(stored.timestamp[-1]) + 1
                 still_open.append(index)
             pending = still_open
 
         series = [item for item in merged if item is not None]
-        if len(series) != len(chunk):
+        if len(series) != len(queries):
             raise DatapointsRetrievalError(
-                f"expected {len(chunk)} datapoint series from CDF, got {len(series)}"
+                f"expected {len(queries)} datapoint series from CDF, got {len(series)}"
             )
         return series
 
@@ -281,32 +232,15 @@ class DatapointsRetriever:
         ]
 
 
-def _needs_manual_paging(query: DatapointsQuery) -> bool:
-    """Whether the SDK may stop this query after its first full page.
-
-    The SDK fetches aggregates with a timezone or a calendar granularity (any
-    sub-hour or longer step counts once a timezone is set, see
-    ``DatapointsQuery.use_cursors``) through a cursor, and
-    ``BaseTaskOrchestrator._store_first_batch`` marks the series done when the
-    first page is full but carries no ``nextCursor``. Those pages are followed
-    here. Raw queries and aggregates without a timezone on fixed-length steps
-    are split over time by the SDK itself and need nothing extra.
-    """
-
-    if not isinstance(query.granularity, str):
-        return False
-    if _has_timezone(query):
-        return True
-    parsed = parse_granularity(query.granularity)
-    return parsed is not None and parsed[1] in CALENDAR_UNITS
+def _is_aggregate(query: DatapointsQuery) -> bool:
+    return isinstance(query.granularity, str)
 
 
-def _has_timezone(query: DatapointsQuery) -> bool:
-    timezone = query.timezone
-    return timezone is not None and timezone is not DatapointsQuery._NOT_SET
+def _value_columns(query: DatapointsQuery) -> list[str]:
+    """Names of the ``Datapoints`` attributes that carry this query's values."""
 
-
-def _aggregate_names(query: DatapointsQuery) -> list[str]:
+    if not _is_aggregate(query):
+        return ["value"]
     aggregates = query.aggregates
     if isinstance(aggregates, str):
         return [aggregates]
@@ -315,21 +249,34 @@ def _aggregate_names(query: DatapointsQuery) -> list[str]:
     return []
 
 
-def _min_page_size(queries: Sequence[DatapointsQuery]) -> int:
+def _read_concurrency() -> int:
+    """The SDK's datapoints read concurrency (requests in flight per client)."""
+
+    return int(global_config.concurrency_settings.datapoints.read)
+
+
+def _min_page_sizes(queries: Sequence[DatapointsQuery]) -> tuple[int, int]:
     """Fewest points the SDK asks for on the first page of any series here.
 
-    ``ChunkingDpsFetcher._create_initial_tasks`` spreads the aggregate queries
-    of one retrieve over several requests and ``_find_initial_query_limits``
-    shares ``_DPS_LIMIT_AGG`` evenly inside each; a single series in eager
-    mode gets the whole budget. In every case a series is asked for at least
-    ``budget // n_aggregate`` points, so a shorter page is complete and a
-    longer one may be full. Using this floor instead of the exact split keeps
-    the check independent of the SDK's concurrency settings, at the cost of
-    at most one extra request per paged chunk.
+    Returns the floor for aggregate and for raw series. With more series than
+    the read concurrency, ``ChunkingDpsFetcher._create_initial_tasks`` spreads
+    them over ``max(read, ceil(n / 100))`` requests (aggregate and raw split
+    independently) and ``_find_initial_query_limits`` shares the request's
+    point budget evenly among the series it carries. A series that fits the
+    eager path (``n <= read``) is asked for the whole budget. Either way a
+    page shorter than the floor is complete; one at least as long may be full.
     """
 
-    n_aggregate = sum(1 for query in queries if isinstance(query.granularity, str))
-    return max(1, _AGGREGATE_POINT_BUDGET // max(1, n_aggregate))
+    n_aggregate = sum(1 for query in queries if _is_aggregate(query))
+    n_raw = len(queries) - n_aggregate
+    read = max(1, _read_concurrency())
+    n_requests = max(read, math.ceil(len(queries) / _MAX_TIME_SERIES_PER_REQUEST))
+
+    def floor(budget: int, count: int) -> int:
+        per_request = max(1, math.ceil(count / n_requests))
+        return max(1, budget // per_request)
+
+    return floor(_AGGREGATE_POINT_BUDGET, n_aggregate), floor(_RAW_POINT_BUDGET, n_raw)
 
 
 def _coerce_series(response: object, expected: int) -> list[Datapoints]:

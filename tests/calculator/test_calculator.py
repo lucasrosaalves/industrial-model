@@ -12,6 +12,7 @@ from cognite.client.data_classes.datapoints import Datapoints, DatapointsQuery
 
 from industrial_model.calculator import (
     Calculator,
+    datapoints_retrieval,
 )
 from industrial_model.calculator.formula_expression.exceptions import (
     MissingTimeAxisError,
@@ -468,9 +469,15 @@ def test_calculate_forwards_timezone_on_a_single_query() -> None:
 
 _HOUR_MS = 3_600_000
 # A lone aggregate series gets the SDK's whole 10_000-point budget on its
-# first page; the mocks below cut there and stop, like the SDK does when the
-# page carries no cursor.
+# first page; the mocks below cut there and stop, like the SDK does when its
+# request scheduler starves. The floor depends on the read concurrency, so
+# pin it.
 _AGGREGATE_PAGE = 10_000
+
+
+@pytest.fixture(autouse=True)
+def _pin_read_concurrency(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(datapoints_retrieval, "_read_concurrency", lambda: 5)
 
 
 def _hour_ms(start: datetime, count: int) -> list[int]:
