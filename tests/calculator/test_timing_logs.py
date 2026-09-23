@@ -88,11 +88,10 @@ def test_debug_logs_stage_summary_and_query_line(
     assert "status=ok" in caplog.text
     assert "queries=1" in caplog.text
     assert "unique_timeseries=1" in caplog.text
-    assert "cdf_chunks=1" in caplog.text
     for stage in _SUMMARY_STAGES:
         assert f"{stage}=" in caplog.text
     assert "bottleneck=" in caplog.text
-    assert "retrieve chunk 1/1: 1 series" in caplog.text
+    assert "retrieve: 1 series in" in caplog.text
     assert "query formula={A} * 2" in caplog.text
     assert "aligned_points=3" in caplog.text
     summary_records = [
@@ -126,7 +125,7 @@ def test_debug_logs_shared_retrieve_across_queries(
     assert "queries=2" in caplog.text
     assert "status=ok" in caplog.text
     assert "unique_timeseries=1" in caplog.text
-    assert caplog.text.count("retrieve chunk") == 1
+    assert caplog.text.count("retrieve: 1 series in") == 1
     assert "formula={A} + 1" in caplog.text
     assert "formula={A} * 2" in caplog.text
 
@@ -156,7 +155,6 @@ def test_format_summary_names_longest_exclusive_stage() -> None:
     timer.durations["evaluate"] = 0.2
     timer.durations["build_requests"] = 9.0
     timer.unique_timeseries = 12
-    timer.cdf_chunks = 1
 
     text = timer.format_summary(queries=3)
 
@@ -164,7 +162,6 @@ def test_format_summary_names_longest_exclusive_stage() -> None:
     assert "status=ok" in text
     assert "queries=3" in text
     assert "unique_timeseries=12" in text
-    assert "cdf_chunks=1" in text
     assert "build_requests=9.000s" in text
     assert "bottleneck=build_requests (9.000s)" in text
 

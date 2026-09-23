@@ -7,9 +7,13 @@ from typing import Literal
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from cognite.client.data_classes.datapoints import Datapoints
+from cognite.client.data_classes.datapoints import Datapoints, DatapointsQuery
 
-from industrial_model.calculator.datapoints_retrieval import DatapointsRetriever
+from industrial_model.calculator import datapoints_retrieval
+from industrial_model.calculator.datapoints_retrieval import (
+    DatapointsRetriever,
+    _min_page_sizes,
+)
 from industrial_model.calculator.exceptions import (
     CalculatorError,
     DatapointsRetrievalError,
@@ -286,31 +290,24 @@ def test_non_numeric_datapoints_type_is_rejected() -> None:
         _retrieve(retriever, [_param("A")], _START, _END)
 
 
-def test_more_than_100_timeseries_are_fetched_in_concurrent_chunks() -> None:
+def test_every_timeseries_goes_into_one_sdk_retrieve() -> None:
+    # More than 100 series is the SDK's job to split into requests; issuing
+    # several concurrent ``retrieve`` calls ourselves is what triggers the
+    # SDK's silent first-page-only result.
     base = _base_ms()
     params = [_param(f"P{i}", external_id=f"ts-{i}") for i in range(150)]
     series = [
         _datapoints(external_id=f"ts-{i}", timestamps=[base], value=[float(i)])
         for i in range(150)
     ]
-
-    client = MagicMock()
-    client.time_series.data.retrieve = AsyncMock(
-        side_effect=[series[:100], series[100:]]
-    )
+    client = _client_returning(*series)
 
     retriever = DatapointsRetriever(client)
     result = _retrieve(retriever, params, _START, _END)
 
-    assert client.time_series.data.retrieve.call_count == 2
-    first_call_requests = client.time_series.data.retrieve.call_args_list[0].kwargs[
-        "instance_id"
-    ]
-    second_call_requests = client.time_series.data.retrieve.call_args_list[1].kwargs[
-        "instance_id"
-    ]
-    assert len(first_call_requests) == 100
-    assert len(second_call_requests) == 50
+    assert client.time_series.data.retrieve.call_count == 1
+    requests = client.time_series.data.retrieve.call_args.kwargs["instance_id"]
+    assert len(requests) == 150
     assert [value for _, value in result[0][0]] == [0.0]
     assert [value for _, value in result[149][0]] == [149.0]
 
@@ -484,17 +481,31 @@ def test_timestamp_and_value_length_mismatch_raises() -> None:
         _retrieve(retriever, [_param("A")], _START, _END)
 
 
-# A lone aggregate series is asked for the SDK's whole 10_000-point budget on
-# its first page; that is the page these mocks cut at.
+# ---------------------------------------------------------------------------
+# A full first page is asked for again, in case the SDK stopped there.
+# ---------------------------------------------------------------------------
+
+# With the read concurrency pinned to 5 (see the fixture below) the SDK asks a
+# lone series for its whole budget on the first page. The mocks below cut
+# there and stop, like the SDK does when its request scheduler starves.
+_READ = 5
 _PAGE = 10_000
+_RAW_PAGE = 100_000
 _HOUR_MS = 3_600_000
+
+
+@pytest.fixture(autouse=True)
+def _pin_read_concurrency(monkeypatch: pytest.MonkeyPatch) -> None:
+    # The SDK freezes its concurrency settings after the first real request,
+    # so patch the lookup rather than the setting itself.
+    monkeypatch.setattr(datapoints_retrieval, "_read_concurrency", lambda: _READ)
 
 
 def _limited_pages(
     timestamps: list[int],
     *,
     aggregate: str | None,
-    page_size: int = _PAGE,
+    page_size: int,
 ) -> MagicMock:
     async def retrieve(*, instance_id: list[object], **_: object) -> list[Datapoints]:
         pages: list[Datapoints] = []
@@ -521,56 +532,100 @@ def _limited_pages(
     return client
 
 
+def _end_after(timestamps: list[int]) -> datetime:
+    return datetime.fromtimestamp((timestamps[-1] + _HOUR_MS) / 1000, UTC)
+
+
+def _result_ms(series: Series) -> list[int]:
+    return [int(ts.timestamp() * 1000) for ts, _ in series]
+
+
+def test_min_page_sizes_follow_the_sdk_request_plan() -> None:
+    def agg(i: int) -> DatapointsQuery:
+        return DatapointsQuery(
+            instance_id=("s", f"a{i}"), aggregates=["average"], granularity="1h"
+        )
+
+    def raw(i: int) -> DatapointsQuery:
+        return DatapointsQuery(instance_id=("s", f"r{i}"))
+
+    # Eager path: every series gets the whole budget.
+    assert _min_page_sizes([agg(0), raw(0)]) == (_PAGE, _RAW_PAGE)
+    # 100 aggregates over read=5 requests: 20 per request.
+    assert _min_page_sizes([agg(i) for i in range(100)]) == (500, _RAW_PAGE)
+    # 594 aggregates need ceil(594 / 100) = 6 requests: 99 per request.
+    assert _min_page_sizes([agg(i) for i in range(594)]) == (101, _RAW_PAGE)
+    # Raw and aggregate are split independently.
+    mixed = [agg(i) for i in range(10)] + [raw(i) for i in range(50)]
+    assert _min_page_sizes(mixed) == (5_000, 10_000)
+
+
 @pytest.mark.parametrize(
     ("aggregate", "granularity", "timezone"),
     [
-        (None, None, "America/Denver"),
         ("average", "1m", None),
         ("average", "1h", None),
-        ("average", "1d", None),
+        ("average", "1h", "America/Denver"),
+        ("average", "1d", "America/Denver"),
+        ("average", "1mo", None),
+        ("average", "1q", None),
+        ("average", "1y", None),
     ],
 )
-def test_raw_and_non_cursor_aggregates_are_not_paged(
-    aggregate: str | None,
-    granularity: str | None,
-    timezone: str | None,
+def test_full_aggregate_page_is_followed_from_its_last_point(
+    aggregate: str, granularity: str, timezone: str | None
 ) -> None:
     timestamps = [_base_ms() + i * _HOUR_MS for i in range(_PAGE + 5)]
-    client = _limited_pages(timestamps, aggregate=aggregate)
+    client = _limited_pages(timestamps, aggregate=aggregate, page_size=_PAGE)
     retriever = DatapointsRetriever(client)
     param = _param("A", aggregate=aggregate, granularity=granularity)
 
     result = _retrieve(
-        retriever,
-        [param],
-        _START,
-        datetime.fromtimestamp((timestamps[-1] + _HOUR_MS) / 1000, UTC),
-        timezone=timezone,
-    )
-
-    assert client.time_series.data.retrieve.call_count == 1
-    assert [int(ts.timestamp() * 1000) for ts, _ in result[0][0]] == timestamps[:_PAGE]
-
-
-@pytest.mark.parametrize("granularity", ["1m", "1h", "1d"])
-def test_every_aggregate_with_a_timezone_is_paged(granularity: str) -> None:
-    # The SDK takes the cursor path for any aggregate once a timezone is set,
-    # sub-hour steps included, so they all need the follow-up request.
-    timestamps = [_base_ms() + i * _HOUR_MS for i in range(_PAGE + 5)]
-    client = _limited_pages(timestamps, aggregate="average")
-    retriever = DatapointsRetriever(client)
-    param = _param("A", aggregate="average", granularity=granularity)
-
-    result = _retrieve(
-        retriever,
-        [param],
-        _START,
-        datetime.fromtimestamp((timestamps[-1] + _HOUR_MS) / 1000, UTC),
-        timezone="America/Denver",
+        retriever, [param], _START, _end_after(timestamps), timezone=timezone
     )
 
     assert client.time_series.data.retrieve.call_count == 2
-    assert [int(ts.timestamp() * 1000) for ts, _ in result[0][0]] == timestamps
+    assert _result_ms(result[0][0]) == timestamps
+    second_start = (
+        client.time_series.data.retrieve.call_args_list[1]
+        .kwargs["instance_id"][0]
+        .start
+    )
+    second_ms = (
+        second_start
+        if isinstance(second_start, int)
+        else int(second_start.timestamp() * 1000)
+    )
+    assert timestamps[_PAGE - 1] < second_ms <= timestamps[_PAGE]
+
+
+def test_full_raw_page_is_followed_from_its_last_point() -> None:
+    timestamps = [_base_ms() + i * 1_000 for i in range(_RAW_PAGE + 5)]
+    client = _limited_pages(timestamps, aggregate=None, page_size=_RAW_PAGE)
+    retriever = DatapointsRetriever(client)
+
+    result = _retrieve(retriever, [_param("A")], _START, _end_after(timestamps))
+
+    assert client.time_series.data.retrieve.call_count == 2
+    assert _result_ms(result[0][0]) == timestamps
+
+
+@pytest.mark.parametrize(
+    ("aggregate", "granularity", "count"),
+    [(None, None, _RAW_PAGE - 1), ("average", "1h", _PAGE - 1)],
+)
+def test_page_shorter_than_the_sdk_first_limit_is_taken_as_complete(
+    aggregate: str | None, granularity: str | None, count: int
+) -> None:
+    timestamps = [_base_ms() + i * 1_000 for i in range(count)]
+    client = _limited_pages(timestamps, aggregate=aggregate, page_size=count)
+    retriever = DatapointsRetriever(client)
+    param = _param("A", aggregate=aggregate, granularity=granularity)
+
+    result = _retrieve(retriever, [param], _START, _end_after(timestamps))
+
+    assert client.time_series.data.retrieve.call_count == 1
+    assert _result_ms(result[0][0]) == timestamps
 
 
 def test_page_ending_exactly_on_the_budget_is_checked_once_more() -> None:
@@ -578,24 +633,20 @@ def test_page_ending_exactly_on_the_budget_is_checked_once_more() -> None:
     # goes out; it comes back empty and the series is closed without
     # duplicates.
     timestamps = [_base_ms() + i * _HOUR_MS for i in range(_PAGE)]
-    client = _limited_pages(timestamps, aggregate="average")
+    client = _limited_pages(timestamps, aggregate="average", page_size=_PAGE)
     retriever = DatapointsRetriever(client)
     param = _param("A", aggregate="average", granularity="1h")
 
     result = _retrieve(
-        retriever,
-        [param],
-        _START,
-        datetime.fromtimestamp((timestamps[-1] + _HOUR_MS) / 1000, UTC),
-        timezone="America/Denver",
+        retriever, [param], _START, _end_after(timestamps), timezone="America/Denver"
     )
 
     assert client.time_series.data.retrieve.call_count == 2
-    assert [int(ts.timestamp() * 1000) for ts, _ in result[0][0]] == timestamps
+    assert _result_ms(result[0][0]) == timestamps
 
 
 def test_naive_start_and_end_are_sent_as_utc() -> None:
-    client = _limited_pages([_base_ms()], aggregate="average")
+    client = _limited_pages([_base_ms()], aggregate="average", page_size=_PAGE)
     retriever = DatapointsRetriever(client)
     param = _param("A", aggregate="average", granularity="1h")
 
@@ -613,15 +664,14 @@ def test_naive_start_and_end_are_sent_as_utc() -> None:
     assert query.start.tzinfo is not None
 
 
-def test_short_page_in_a_wide_chunk_is_paged_and_short_series_drop_out() -> None:
-    # With 100 aggregate series in the chunk the SDK may hand each as few as
-    # 100 points, so a 500-point page is still treated as possibly full and
-    # followed up, while a 10-point series is complete and leaves the batch.
+def test_first_page_floor_shrinks_with_more_series_and_short_ones_drop_out() -> None:
+    # 100 aggregate series over read=5 requests: the SDK hands each at most
+    # 500 points on the first page, so a 500-point page is followed while a
+    # 10-point series is complete and leaves the batch.
     count = 501
     page = 500
     timestamps = [_base_ms() + i * _HOUR_MS for i in range(count)]
     short_id = "short"
-    end = datetime.fromtimestamp((timestamps[-1] + _HOUR_MS) / 1000, UTC)
 
     async def retrieve(*, instance_id: list[object], **_: object) -> list[Datapoints]:
         pages: list[Datapoints] = []
@@ -656,7 +706,11 @@ def test_short_page_in_a_wide_chunk_is_paged_and_short_series_drop_out() -> None
     )
 
     result = _retrieve(
-        DatapointsRetriever(client), params, _START, end, timezone="America/Denver"
+        DatapointsRetriever(client),
+        params,
+        _START,
+        _end_after(timestamps),
+        timezone="America/Denver",
     )
 
     assert client.time_series.data.retrieve.call_count == 2
@@ -668,45 +722,14 @@ def test_short_page_in_a_wide_chunk_is_paged_and_short_series_drop_out() -> None
         query.dump()["instance_id"]["external_id"] != short_id for query in second_batch
     )
     for series in result[:-1]:
-        got = [int(ts.timestamp() * 1000) for ts, _ in series[0]]
+        got = _result_ms(series[0])
         assert got == timestamps
         assert got.count(timestamps[page - 1]) == 1
-    short = [int(ts.timestamp() * 1000) for ts, _ in result[-1][0]]
-    assert short == timestamps[:10]
-
-
-@pytest.mark.parametrize("granularity", ["1mo", "1q", "1y"])
-def test_calendar_granularity_is_paged_without_timezone(granularity: str) -> None:
-    timestamps = [_base_ms() + i * _HOUR_MS for i in range(_PAGE + 5)]
-    client = _limited_pages(timestamps, aggregate="average")
-    retriever = DatapointsRetriever(client)
-    param = _param("A", aggregate="average", granularity=granularity)
-
-    result = _retrieve(
-        retriever,
-        [param],
-        _START,
-        datetime.fromtimestamp((timestamps[-1] + _HOUR_MS) / 1000, UTC),
-    )
-
-    assert client.time_series.data.retrieve.call_count == 2
-    assert [int(ts.timestamp() * 1000) for ts, _ in result[0][0]] == timestamps
-    second_start = (
-        client.time_series.data.retrieve.call_args_list[1]
-        .kwargs["instance_id"][0]
-        .start
-    )
-    second_ms = (
-        second_start
-        if isinstance(second_start, int)
-        else int(second_start.timestamp() * 1000)
-    )
-    assert timestamps[_PAGE - 1] < second_ms <= timestamps[_PAGE]
+    assert _result_ms(result[-1][0]) == timestamps[:10]
 
 
 def test_paged_aggregate_keeps_every_merged_column() -> None:
     timestamps = [_base_ms() + i * _HOUR_MS for i in range(_PAGE + 3)]
-    end = datetime.fromtimestamp((timestamps[-1] + _HOUR_MS) / 1000, UTC)
 
     async def retrieve(*, instance_id: list[object], **_: object) -> list[Datapoints]:
         query = instance_id[0]
@@ -730,11 +753,15 @@ def test_paged_aggregate_keeps_every_merged_column() -> None:
     total = _param("B", aggregate="sum", granularity="1h")
 
     result = _retrieve(
-        retriever, [average, total], _START, end, timezone="America/Denver"
+        retriever,
+        [average, total],
+        _START,
+        _end_after(timestamps),
+        timezone="America/Denver",
     )
 
-    assert [int(ts.timestamp() * 1000) for ts, _ in result[0][0]] == timestamps
-    assert [int(ts.timestamp() * 1000) for ts, _ in result[1][0]] == timestamps
+    assert _result_ms(result[0][0]) == timestamps
+    assert _result_ms(result[1][0]) == timestamps
     assert [value for _, value in result[0][0]] == [float(ts) for ts in timestamps]
     assert [value for _, value in result[1][0]] == [ts / 10 for ts in timestamps]
     assert len({ts for ts, _ in result[0][0]}) == len(timestamps)
