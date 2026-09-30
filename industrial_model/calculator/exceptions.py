@@ -12,3 +12,12 @@ class CalculatorError(Exception):
 
 class DatapointsRetrievalError(CalculatorError):
     """Raised when CDF returns datapoints the retriever cannot use."""
+
+
+class BucketGranularityError(CalculatorError):
+    """Raised when a query's ``bucket_granularity`` does not fit its formula.
+
+    A ``sum(...)`` / ``average(...)`` formula needs a known
+    ``bucket_granularity`` no finer than any aggregated parameter. Other
+    formulas ignore it.
+    """

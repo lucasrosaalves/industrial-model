@@ -3,6 +3,9 @@ from __future__ import annotations
 import math
 from collections.abc import Callable
 from dataclasses import dataclass
+from typing import get_args
+
+from ._types import BucketAggregate
 
 
 def rolling_average(values: tuple[float, ...], window: int) -> tuple[float, ...]:
@@ -56,3 +59,9 @@ ALLOWED_FUNCTIONS: dict[str, FunctionSpec] = {
         apply=rolling_average,
     ),
 }
+
+
+# Calls that aggregate their argument into time buckets. They are not series
+# transforms (the compiler splits them out), so they live outside
+# ``ALLOWED_FUNCTIONS``.
+BUCKET_AGGREGATES: frozenset[str] = frozenset(get_args(BucketAggregate))

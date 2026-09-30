@@ -120,13 +120,13 @@ from industrial_model.calculator import (
 | Model | `type` tag | Fields | Notes |
 |---|---|---|---|
 | `ConstantParameter` | `"constant"` | `alias: str`, `value: float` | A fixed scalar, broadcast across every timestamp in the result. No CDF call is made for it. |
-| `TimeSeriesParameter` | `"single_timeseries"` | `alias: str`, `timeseries_instance_id: InstanceId`, `aggregate_type: Aggregate \| None`, `granularity: str \| None` | Exactly one CDF time series. |
-| `MultiTimeSeriesParameter` | `"multi_timeseries"` | `alias: str`, `timeseries_instance_ids: list[InstanceId]` (≥ 2, unique), `aggregate_type: Aggregate \| None`, `granularity: str \| None`, `reducer: ReducerType` | Two or more CDF time series, combined with `reducer` — see [Multiple time series per parameter](#multiple-time-series-per-parameter). `reducer` has no default; you must always supply one. Duplicate instance ids are rejected. |
+| `TimeSeriesParameter` | `"single_timeseries"` | `alias: str`, `timeseries_instance_id: InstanceId`, `aggregate_type: Aggregate \| None`, `granularity: str \| None`, `fill_value: float \| None` | Exactly one CDF time series. `fill_value` (finite, default `None`) is used where this series has no point but the query keeps the timestamp — see [Filling missing points](#filling-missing-points). |
+| `MultiTimeSeriesParameter` | `"multi_timeseries"` | `alias: str`, `timeseries_instance_ids: list[InstanceId]` (≥ 2, unique), `aggregate_type: Aggregate \| None`, `granularity: str \| None`, `reducer: ReducerType`, `fill_value: float \| None` | Two or more CDF time series, combined with `reducer` — see [Multiple time series per parameter](#multiple-time-series-per-parameter). `reducer` has no default; you must always supply one. Duplicate instance ids are rejected. With `fill_value`, the series are combined on the union of their timestamps, each filled where it has no point, and the combined series is filled like any other. |
 | `ReducerType` | — | `Literal["min", "max", "sum", "average"]` | How multiple time series for one parameter are combined into one. |
 | `AlignmentMode` | — | `Literal["intersect", "strict"]` | How time-series parameters in a query are joined on time. Default is `"intersect"`. |
-| `CalculatorQuery` | — | `formula: str`, `parameters: list[CalculatorParameter]`, `alignment: AlignmentMode` (default `"intersect"`) | One query = one formula + the parameters it references. Every parameter's `alias` must be unique within the query — see below. `alignment` controls how time-series parameters are joined on time — see [Timestamp alignment](#timestamp-alignment). |
+| `CalculatorQuery` | — | `formula: str`, `parameters: list[CalculatorParameter]`, `alignment: AlignmentMode` (default `"intersect"`), `bucket_granularity: str \| None` (default `None`) | One query = one formula + the parameters it references. Every parameter's `alias` must be unique within the query — see below. `alignment` controls how time-series parameters are joined on time — see [Timestamp alignment](#timestamp-alignment). `bucket_granularity` is the granularity a formula that calls `sum(...)` / `average(...)` aggregates by: required by those formulas, ignored by any other (so a caller can always pass its granularity). A `fill_value` with `alignment="strict"` is rejected. |
 | `DataPoint` | — | `timestamp: datetime`, `value: float` | A `NamedTuple` timestamped numeric value. Used both for the formula result (`datapoints`) and for each aligned input series. Unpack as `ts, value = dp`. Not a Pydantic model — see below. |
-| `CalculationResult` | — | `query: CalculatorQuery`, `datapoints: list[DataPoint]`, `inputs: dict[str, list[DataPoint]]` | Frozen dataclass output of `Calculator.calculate`. `query` is the originating query; `datapoints` has one `DataPoint` per aligned index; `inputs` is the aligned parameter series the formula evaluated (`inputs[alias][i]` was used to compute `datapoints[i]`). Not a Pydantic model — see below. |
+| `CalculationResult` | — | `query: CalculatorQuery`, `datapoints: list[DataPoint]`, `inputs: dict[str, list[DataPoint]]` | Frozen dataclass output of `Calculator.calculate`. `query` is the originating query; `datapoints` has one `DataPoint` per aligned index; `inputs` is the aligned parameter series the formula evaluated (`inputs[alias][i]` was used to compute `datapoints[i]`). For a `sum(...)` / `average(...)` formula, `inputs` holds the aligned points the formula ran on, before its results were aggregated into `datapoints`, so it is not index-aligned with `datapoints`. Not a Pydantic model — see below. |
 
 Query and parameter types (`CalculatorQuery`, `ConstantParameter`, `TimeSeriesParameter`, `MultiTimeSeriesParameter`) are Pydantic so construction and `model_validate` still check aliases, discriminators, and aggregate/granularity rules. `DataPoint` and `CalculationResult` are not: assembling a result builds one `DataPoint` per timestamp for the output and for every input series, and Pydantic validation on that path dominated calculate time. They stay a `NamedTuple` and a frozen dataclass so assemble is just object construction. Attribute access is unchanged (`dp.timestamp`, `dp.value`); `model_dump` / `model_validate` are not available on these two types.
 
@@ -238,6 +238,7 @@ If you only have one time series for a parameter, use `TimeSeriesParameter` inst
 - Series are combined by **intersecting on timestamp**: a timestamp survives into the reduced series only if *every* referenced time series has a value at that exact timestamp. This is stricter than a positional zip — it won't silently pair up unrelated points if one series has a gap the others don't.
 - Because of that, **use `aggregate_type` + `granularity`** whenever you reduce multiple time series. Aggregated queries bucket every series onto the same aligned time grid, so timestamps line up; raw datapoints from independent series almost never share exact timestamps, and reducing raw series will typically collapse to an empty result.
 - If the referenced series have no timestamps in common at all, the parameter's series — and therefore the formula's result — is empty.
+- With `fill_value`, the series are combined on the **union** of their timestamps instead, each filled with `fill_value` where it has no point. For counts summed across lines (`reducer="sum"`, `fill_value=0`), a minute where only one line reported keeps that line's count instead of being dropped.
 - Validation happens at construction time: `MultiTimeSeriesParameter` raises a `pydantic.ValidationError` if it has fewer than two `timeseries_instance_ids`, if any instance id is repeated, or if `reducer` is omitted entirely (it has no default).
 
 ```python
@@ -287,6 +288,27 @@ Element-wise formulas like `{A} + {B}` are evaluated on a single time axis. `Cal
 | `"strict"` | Require identical timestamps at every index. Raise `ParameterTimestampError` if they differ. Use this when a missing bucket should fail the job rather than be omitted. Grid fill for `rolling_average` does not bypass this check. |
 
 This is the same intersection rule `SeriesReducer` uses inside a `MultiTimeSeriesParameter`. Constants are broadcast onto whatever timestamps remain.
+
+#### Filling missing points
+
+A missing point is not always "unknown". For a count (good parts, throughput), a minute CDF returns nothing for usually means zero, and intersecting would drop that minute from every other parameter too. Set `fill_value` on those parameters:
+
+- A parameter **without** `fill_value` still decides which timestamps exist: a timestamp is kept only when every such parameter has a point there.
+- A parameter **with** `fill_value` never removes a timestamp; where it has no point, the fill value is used (and appears in `inputs`).
+- When **every** time-series parameter has a `fill_value`, the axis is the union of all their timestamps.
+
+```python
+# Keep every minute that has a nominal speed; a minute without throughput counts as 0.
+CalculatorQuery(
+    formula="{TTP} / {NSP}",
+    parameters=[
+        TimeSeriesParameter(alias="NSP", timeseries_instance_id=nsp, aggregate_type="average", granularity="1m"),
+        TimeSeriesParameter(alias="TTP", timeseries_instance_id=ttp, aggregate_type="sum", granularity="1m", fill_value=0),
+    ],
+)
+```
+
+`fill_value` needs `alignment="intersect"`; `strict` never fills, so the combination is rejected at construction. On the `rolling_average` grid path a filled parameter's missing buckets use the fill value instead of `NaN`, so they count inside the window.
 
 ```python
 # default: evaluate only where A and B both have a point
@@ -339,6 +361,7 @@ Formulas are plain text with `{NAME}` placeholders substituted by parameter seri
 | Boolean | `and`, `or` |
 | Conditional | ternary `X if COND else Y` |
 | Functions | `rolling_average(series, N)` — simple moving average of the last `N` aligned points (NaNs skipped); see [Rolling average](#rolling-average) |
+| Bucket aggregates | `sum(expr)` / `average(expr)` — calculate `expr` per point, then aggregate by `bucket_granularity`; the rest of the formula runs per bucket (`sum({A}) / sum({B})`). `Calculator` only, see [Bucket aggregates](#bucket-aggregates-calculate-then-aggregate) |
 | Constants | numeric literals only: `42`, `3.14`, `1e-3`. No strings, booleans, `None`, lists, etc. |
 
 Whitespace (including newlines/tabs) is normalized before parsing, so multi-line formulas are fine.
@@ -471,12 +494,85 @@ evaluate(
 # (100.0, 105.0, 110.0, 115.0)
 ```
 
+### Bucket aggregates: calculate, then aggregate
+
+A formula over aggregated parameters is evaluated **per output bucket**: CDF aggregates each parameter to the granularity first, and the formula runs on those totals. That is right for linear formulas (`{GQ} + {SQ}`), and wrong whenever a bucket's parameters vary inside it and the formula multiplies or divides them. OEE Speed Losses Time is the usual example:
+
+```text
+(({NSP} * {RUNT}) - {TTP}) / {NSP}
+```
+
+With a product change on the half hour (nominal speed 10 then 20 units/min, running the whole hour, 8 units/min produced), the hourly answer is 24 minutes, but aggregating first gives `(15 * 60 - 480) / 15 = 28`.
+
+Wrap the formula in `sum(...)` or `average(...)` and set `CalculatorQuery.bucket_granularity` to calculate on the parameters **as you fetch them** and then aggregate the results by that granularity:
+
+```python
+query = CalculatorQuery(
+    formula="sum((({NSP} * {RUNT}) - {TTP}) / {NSP})",
+    parameters=[
+        TimeSeriesParameter(alias="NSP", timeseries_instance_id=nsp, aggregate_type="average", granularity="1m"),
+        TimeSeriesParameter(alias="RUNT", timeseries_instance_id=runt, aggregate_type="sum", granularity="1m", fill_value=0),
+        TimeSeriesParameter(alias="TTP", timeseries_instance_id=ttp, aggregate_type="sum", granularity="1m", fill_value=0),
+    ],
+    bucket_granularity="1h",
+)
+result = await calculator.calculate(query, start, end, timezone="America/Denver")
+# result.datapoints: one point per hour, the sum of the per-minute values
+# result.inputs:     the per-minute aligned inputs the formula ran on
+```
+
+How it runs:
+
+1. Parameters are fetched **exactly as declared**, aggregated or raw, as for any query. Here each is a `1m` aggregate with its own `aggregate_type` (`average` for a speed, `sum` for a count).
+2. Parameters are aligned (`intersect`, honoring `fill_value`), and the expression inside `sum(...)` runs once per aligned point. `if` / `else` guards work per point, so `sum({TTP} / {NSP} if {NSP} != 0 else 0)` is safe.
+3. Results are grouped into `bucket_granularity` buckets and summed or averaged (`average` is the mean of the points that have a value). `NaN` results are skipped; a bucket with no value is omitted, as CDF omits empty buckets.
+
+#### Formulas over bucket totals
+
+`sum(...)` / `average(...)` can appear anywhere in a formula, any number of times. Each call runs per point and is aggregated into buckets as above; the rest of the formula then runs **once per bucket** on those totals. That is how you write a ratio of totals, such as OEE Performance:
+
+```python
+CalculatorQuery(
+    formula="sum({TTP}) / sum({NSP} * {RUNT}) if sum({NSP} * {RUNT}) != 0 else 0",
+    parameters=[...],  # NSP, RUNT, TTP as above
+    bucket_granularity="1h",
+)
+# hourly: 480 produced / (30 * 10 + 30 * 20) possible = 0.533
+```
+
+This is not the same as `average({TTP} / ({NSP} * {RUNT}))`, which weighs every minute equally and gives `(30 * 0.8 + 30 * 0.4) / 60 = 0.6`. Pick the one that matches the KPI's definition.
+
+- Identical calls (`sum({NSP} * {RUNT})` above) are calculated once.
+- Outside `sum(...)` / `average(...)` the formula has no per-point values, so a time-series parameter there is rejected with `InvalidFormulaError` (`sum({TTP}) / {NSP}`). Constant parameters are fine (`100 * sum({A}) / {TARGET}`).
+- A bucket is returned only when every call has a value in it, and a `NaN` result is dropped. `if` / `else` guards run per bucket, so guard a division by a bucket total there.
+
+**Output buckets match CDF's own.** The fetch window is widened to the whole `bucket_granularity` buckets CDF would return for `[start, end)` with the same `timezone`, so `sum({X})` over `1m` sums with `bucket_granularity="1d"` equals CDF's native `1d` `sum` of `{X}`, including timestamps. Checked against CDF:
+
+| Granularity | First bucket for a start inside it |
+|---|---|
+| `s`, `m` (any multiple) | Floored to the UTC second / minute; `timezone` is ignored. `15m` from 13:37 starts at 13:37. |
+| `h` (any multiple) | Floored to the local hour. `2h` from 13:37 starts at 13:00, not 12:00. Hours are fixed durations, so a fall-back day has 25. |
+| `d`, `w` | Local midnight of the start day. `7d` / `1w` start on that day, not on a Monday. 23 / 25 h DST days follow the wall clock. |
+| `mo`, `q`, `y` | Local midnight on the 1st of the start month. `3mo` / `1q` / `1y` do not snap to a calendar quarter or year. |
+
+The last bucket that starts before `end` is returned whole, and every bucket holds all of its data, including data outside `[start, end)`. An empty window returns nothing.
+
+Rules and limits:
+
+- `sum` / `average` cannot be nested (`sum(average({A}))`), must reference at least one parameter, and cannot be combined with `rolling_average` yet, inside or outside them.
+- `bucket_granularity` is required with `sum(...)` / `average(...)` and ignored without them. It must be a known granularity no finer than any aggregated parameter (`1d` parameters into `1h` buckets is rejected). All of this raises `BucketGranularityError` before anything is fetched.
+- Parameters must share timestamps to be calculated together, exactly as for any query. Aggregates on one granularity do; raw series from different sources rarely do. Pick a parameter granularity that nests in every bucket: `1m` always does.
+- Constants are broadcast per point (`sum({RUNT} * {SECONDS})`).
+- `evaluate()` has no timestamps and rejects these formulas with `InvalidFormulaError`.
+- Cost follows the parameters' granularity, not the bucket: `1m` parameters are 1,440 points per series per day, ~525k per year. In one `calculate_multiples`, queries are retrieved once per distinct fetch window (deduplicated as usual): bucket queries on the same `bucket_granularity` share one, and plain queries use the call's `[start, end)`. Windows are retrieved one after another, never concurrently.
+
 ### Errors
 
 Every exception the package raises derives from `CalculatorError`, so `except CalculatorError` catches the lot:
 
 ```
 CalculatorError                     industrial_model.calculator (re-exported at package root)
+├── BucketGranularityError          industrial_model.calculator.exceptions
 ├── DatapointsRetrievalError        industrial_model.calculator.exceptions
 └── FormulaError                    industrial_model.calculator.formula_expression.exceptions
     ├── InvalidFormulaError
@@ -487,13 +583,15 @@ CalculatorError                     industrial_model.calculator (re-exported at 
         └── MissingTimeAxisError
 ```
 
+`BucketGranularityError` is raised before any retrieve when a `sum(...)` / `average(...)` query has no `bucket_granularity`, an unknown one, or one finer than an aggregated parameter. A plain formula ignores `bucket_granularity`.
+
 `DatapointsRetrievalError` covers CDF responses the retriever can't use: a short response, non-numeric datapoints, or a timestamp/value length mismatch. An invalid ``timezone=`` is not wrapped — the Cognite SDK / API error is raised as-is.
 
 The structural formula errors:
 
 | Exception | Raised when |
 |---|---|
-| `InvalidFormulaError` | Empty formula, invalid/unresolved placeholder syntax, invalid Python syntax, or an unsupported AST node/identifier/constant type (e.g. calling an unknown function, using a string literal, or a non-constant / non-positive `rolling_average` window). |
+| `InvalidFormulaError` | Empty formula, invalid/unresolved placeholder syntax, invalid Python syntax, or an unsupported AST node/identifier/constant type (e.g. calling an unknown function, using a string literal, or a non-constant / non-positive `rolling_average` window). Also a nested `sum(...)` / `average(...)`, one without a parameter, one combined with `rolling_average`, any passed to `evaluate()`, and (from `Calculator`) a time-series parameter used outside them. |
 | `MissingParameterError` | The formula references a placeholder with no matching entry in `parameters`/`kwargs`. |
 | `ParameterError` | A supplied parameter value isn't a numeric sequence (e.g. a string, or a sequence containing non-numeric/boolean items). |
 | `ParameterLengthError` | Two or more referenced parameters have different lengths (and not all are empty). Direct `evaluate()` calls raise this; `Calculator` aligns on timestamps before calling `evaluate`. |
@@ -660,16 +758,16 @@ result = await calculator.calculate(query, start, end)
 
 | File | Responsibility |
 |---|---|
-| `calculator.py` | `Calculator` — async orchestrator for retrieval + evaluation of one or many queries. Takes a `CogniteClient` and uses `get_async_client()` for CDF I/O. Splits `ConstantParameter`s (broadcast, never fetched) from time-series parameters (fetched via `DatapointsRetriever`), uses `SeriesReducer` to collapse a `MultiTimeSeriesParameter`'s series, then aligns remaining time-series parameters (`intersect` by default, or `strict`). When `rolling_average` runs over a uniform aggregate granularity, fills that bucket grid before evaluation after honoring `alignment`. |
+| `calculator.py` | `Calculator` — async orchestrator for retrieval + evaluation of one or many queries. Plans each query first: a `sum(...)` / `average(...)` query is fetched as declared over CDF's whole-bucket span of its `bucket_granularity`, and parameters are retrieved once per distinct window, sequentially. For a bucket query, each `sum(...)` / `average(...)` term runs per point and is aggregated by `bucket_granularity`, then the rest of the formula runs per bucket. Takes a `CogniteClient` and uses `get_async_client()` for CDF I/O. Splits `ConstantParameter`s (broadcast, never fetched) from time-series parameters (fetched via `DatapointsRetriever`), uses `SeriesReducer` to collapse a `MultiTimeSeriesParameter`'s series, then aligns remaining time-series parameters (`intersect` by default, or `strict`). When `rolling_average` runs over a uniform aggregate granularity, fills that bucket grid before evaluation after honoring `alignment`. |
 | `_timing.py` | `StageTimer` — exclusive wall-clock timings for DEBUG stage summaries. No-op when the calculator logger is not at DEBUG. |
 | `_timezone.py` | Resolves IANA / UTC-offset strings to ``tzinfo`` when stepping hour+ rolling-average grids. Public ``timezone=`` is not validated here. |
-| `_grid.py` | Bucket-grid construction for `rolling_average` over a uniform CDF granularity (fixed steps for sub-hour; local calendar for hour+). |
+| `_grid.py` | Bucket-grid construction for `rolling_average` over a uniform CDF granularity (fixed steps for sub-hour; local calendar for hour+). Also CDF's bucket rules for bucket aggregates: `bucket_span` (the whole buckets CDF covers for a window) and `aggregate_into_buckets`. |
 | `datapoints_retrieval.py` | `DatapointsRetriever` — fetching only: builds deduplicated `DatapointsQuery` requests per unique (time series, aggregate, granularity), retrieves them in one SDK call (and asks again when a page is long enough to be truncated), and parses responses into `(timestamp, value)` pairs (dropping `None` values). Returns one *unreduced* series per instance id — combining them is the caller's job. Optional retrieve ``timezone`` is applied to every aggregate in the batch (omitted from the query when unset). |
-| `series_reducer.py` | `SeriesReducer` — timestamp intersection via a sorted k-way merge. `reduce` combines several series into one with `min`/`max`/`sum`/`average`; `align` filters several series onto their common timestamps. Both normalize every input first (sort by timestamp, collapse duplicate timestamps to their last value), including the single-series case, so output never depends on how many series were passed. Used by `Calculator` for `MultiTimeSeriesParameter` and for formula-level `intersect` alignment. |
+| `series_reducer.py` | `SeriesReducer` — timestamp intersection via a sorted k-way merge. `reduce` combines several series into one with `min`/`max`/`sum`/`average`; `align` filters several series onto their common timestamps; `align_filled` aligns on the union instead, filling parameters that have a `fill_value`. Both normalize every input first (sort by timestamp, collapse duplicate timestamps to their last value), including the single-series case, so output never depends on how many series were passed. Used by `Calculator` for `MultiTimeSeriesParameter` and for formula-level `intersect` alignment. |
 | `models.py` | Query models are Pydantic: `CalculatorParameter` (discriminated union), `ConstantParameter`, `TimeSeriesParameter`, `MultiTimeSeriesParameter`, `TimeSeriesParameterBase` (shared fields, not itself part of the union), `ReducerType`, `AlignmentMode`, `Series` (the `list[(timestamp, value)]` alias used throughout), `CalculatorQuery` (validates unique parameter aliases). Output types are not Pydantic — validation per datapoint was the assemble bottleneck — so `DataPoint` is a `NamedTuple` and `CalculationResult` is a frozen dataclass. |
-| `exceptions.py` | `CalculatorError`, the root every other exception in the package derives from, and `DatapointsRetrievalError` for unusable CDF responses. |
+| `exceptions.py` | `CalculatorError`, the root every other exception in the package derives from, `DatapointsRetrievalError` for unusable CDF responses, and `BucketGranularityError` for bucket queries that cannot be bucketed. |
 | `formula_expression/core.py` | Public `evaluate()` entry point; merges positional mapping + kwargs. |
-| `formula_expression/_compiler.py` | Text normalization, placeholder substitution, AST allow-list validation (including allow-listed `Call`s), constant folding, `lru_cache`-based compile caching. |
+| `formula_expression/_compiler.py` | Text normalization, placeholder substitution, splitting each `sum(...)` / `average(...)` call into a per-point `BucketTerm` (identical calls shared) and a per-bucket formula over their totals, AST allow-list validation (including allow-listed `Call`s), constant folding, `lru_cache`-based compile caching. |
 | `formula_expression/_functions.py` | Allow-listed formula functions: name, arity, and implementation. Currently `rolling_average` (same-length simple moving average with a partial prefix; NaNs skipped). |
 | `formula_expression/_evaluator.py` | AST walker: vectorized evaluation for pure-arithmetic trees (including function calls), index-by-index short-circuiting evaluation for conditional/boolean/comparison trees. |
 | `formula_expression/_runtime.py` | Binds compiled formulas to concrete parameter values: parameter presence/type/length validation, then delegates to the evaluator. |

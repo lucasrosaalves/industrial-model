@@ -5,13 +5,14 @@ import functools
 import math
 import re
 import sys
-from collections.abc import Mapping
+from collections.abc import Collection, Mapping
 from dataclasses import dataclass
 from functools import lru_cache
 from typing import cast
 
 from ._evaluator import _BINARY_OPS, _UNARY_OPS
-from ._functions import ALLOWED_FUNCTIONS
+from ._functions import ALLOWED_FUNCTIONS, BUCKET_AGGREGATES
+from ._types import BucketAggregate
 from .exceptions import InvalidFormulaError
 
 _PLACEHOLDER_RE = re.compile(r"\{([A-Za-z_][A-Za-z0-9_]*)\}")
@@ -55,14 +56,37 @@ _ALLOWED_BOOL_OPS = (
 _CONDITIONAL_NODES = (ast.IfExp, ast.Compare, ast.BoolOp)
 
 
+_SAFE_BUCKET_PREFIX = "__formula_expression_bucket_"
+
+
 @dataclass(frozen=True, slots=True)
 class CompiledFormula:
     raw: str
     expression: str
+    # With ``bucket_terms`` set, this is the per-bucket formula: each
+    # ``sum(...)`` / ``average(...)`` call is replaced by its term's ``key``,
+    # and ``variables`` / ``name_map`` hold those keys next to the
+    # placeholders referenced outside any call.
     tree: ast.Expression
     variables: tuple[str, ...]
     name_map: Mapping[str, str]
     has_conditional: bool
+    bucket_terms: tuple[BucketTerm, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class BucketTerm:
+    """One ``sum(...)`` / ``average(...)`` call of a bucket formula.
+
+    ``formula`` is the call's argument, which runs per aligned point; its
+    results are aggregated into buckets by ``aggregate``. The per-bucket
+    formula reads those bucket values under ``key``, which can never clash
+    with a placeholder name.
+    """
+
+    aggregate: BucketAggregate
+    key: str
+    formula: CompiledFormula
 
 
 @lru_cache(maxsize=1024)
@@ -86,6 +110,19 @@ def _compile_normalized(raw: str) -> CompiledFormula:
         raise InvalidFormulaError(f"invalid formula syntax: {exc.msg}") from exc
 
     _validate_tree(tree, set(name_map.values()))
+    if not any(_is_call_to(node, BUCKET_AGGREGATES) for node in ast.walk(tree)):
+        return _finish(raw, expression, tree.body, name_map)
+    return _compile_bucket_formula(raw, expression, tree.body, name_map)
+
+
+def _finish(
+    raw: str,
+    expression: str,
+    body: ast.expr,
+    name_map: Mapping[str, str],
+    bucket_terms: tuple[BucketTerm, ...] = (),
+) -> CompiledFormula:
+    tree = ast.Expression(body=body)
     has_conditional = any(
         isinstance(node, _CONDITIONAL_NODES) for node in ast.walk(tree)
     )
@@ -95,9 +132,10 @@ def _compile_normalized(raw: str) -> CompiledFormula:
         raw=raw,
         expression=expression,
         tree=tree,
-        variables=tuple(variables),
+        variables=tuple(name_map),
         name_map=name_map,
         has_conditional=has_conditional,
+        bucket_terms=bucket_terms,
     )
 
 
@@ -171,25 +209,116 @@ def _validate_tree(tree: ast.Expression, allowed_names: set[str]) -> None:
             raise InvalidFormulaError("only numeric constants are supported")
 
 
+def _compile_bucket_formula(
+    raw: str,
+    expression: str,
+    body: ast.expr,
+    name_map: Mapping[str, str],
+) -> CompiledFormula:
+    """Split a formula into per-point bucket terms and a per-bucket formula.
+
+    Every ``sum(...)`` / ``average(...)`` call becomes a :class:`BucketTerm`
+    and is replaced by a name the per-bucket formula reads its bucket values
+    by. Identical calls share one term.
+    """
+
+    extractor = _BucketTermExtractor()
+    body = extractor.visit(body)
+    for node in ast.walk(body):
+        if _is_call_to(node, ALLOWED_FUNCTIONS):
+            raise InvalidFormulaError(
+                f"{_call_name(node)}() cannot be combined with sum() / average() yet"
+            )
+
+    terms: list[BucketTerm] = []
+    for index, (aggregate, argument) in enumerate(extractor.calls):
+        used = _names_in(argument)
+        term_names = {name: safe for name, safe in name_map.items() if safe in used}
+        if not term_names:
+            raise InvalidFormulaError(
+                f"{aggregate}() must reference at least one parameter"
+            )
+        per_point = _finish(raw, ast.unparse(argument), argument, term_names)
+        terms.append(BucketTerm(aggregate, f"{aggregate}#{index}", per_point))
+
+    used = _names_in(body)
+    outer_names = {name: safe for name, safe in name_map.items() if safe in used}
+    for index, term in enumerate(terms):
+        outer_names[term.key] = f"{_SAFE_BUCKET_PREFIX}{index}"
+    return _finish(raw, expression, body, outer_names, tuple(terms))
+
+
+class _BucketTermExtractor(ast.NodeTransformer):
+    """Replace each ``sum(...)`` / ``average(...)`` call by a term name."""
+
+    def __init__(self) -> None:
+        self.calls: list[tuple[BucketAggregate, ast.expr]] = []
+        self._indexes: dict[tuple[str, str], int] = {}
+
+    def visit_Call(self, node: ast.Call) -> ast.AST:
+        if not _is_call_to(node, BUCKET_AGGREGATES):
+            return self.generic_visit(node)
+        aggregate = cast(BucketAggregate, _call_name(node))
+        argument = node.args[0]
+        for inner in ast.walk(argument):
+            if _is_call_to(inner, BUCKET_AGGREGATES):
+                raise InvalidFormulaError("sum() and average() cannot be nested")
+            if _is_call_to(inner, ALLOWED_FUNCTIONS):
+                raise InvalidFormulaError(
+                    f"{aggregate}() cannot wrap {_call_name(inner)}() yet"
+                )
+        signature = (aggregate, ast.dump(argument))
+        index = self._indexes.get(signature)
+        if index is None:
+            index = len(self.calls)
+            self._indexes[signature] = index
+            self.calls.append((aggregate, argument))
+        return ast.copy_location(
+            ast.Name(id=f"{_SAFE_BUCKET_PREFIX}{index}", ctx=ast.Load()), node
+        )
+
+
+def _is_call_to(node: ast.AST, names: Collection[str]) -> bool:
+    return (
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id in names
+    )
+
+
+def _call_name(node: ast.AST) -> str:
+    assert isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+    return node.func.id
+
+
+def _names_in(node: ast.AST) -> set[str]:
+    return {child.id for child in ast.walk(node) if isinstance(child, ast.Name)}
+
+
 def _validate_call_shape(node: ast.Call) -> None:
     if not isinstance(node.func, ast.Name):
         raise InvalidFormulaError(
             f"unsupported formula element: {type(node.func).__name__}"
         )
 
-    spec = ALLOWED_FUNCTIONS.get(node.func.id)
-    if spec is None:
-        if node.func.id.startswith(_SAFE_NAME_PREFIX):
-            raise InvalidFormulaError("unsupported formula element: Call")
-        raise InvalidFormulaError(f"unknown formula function: {node.func.id}")
+    if node.func.id in BUCKET_AGGREGATES:
+        arity = 1
+    else:
+        spec = ALLOWED_FUNCTIONS.get(node.func.id)
+        if spec is None:
+            if node.func.id.startswith(_SAFE_NAME_PREFIX):
+                raise InvalidFormulaError("unsupported formula element: Call")
+            raise InvalidFormulaError(f"unknown formula function: {node.func.id}")
+        arity = spec.arity
 
     if node.keywords:
         raise InvalidFormulaError(f"{node.func.id}() does not accept keyword arguments")
     if any(isinstance(arg, ast.Starred) for arg in node.args):
         raise InvalidFormulaError(f"{node.func.id}() does not accept starred arguments")
-    if len(node.args) != spec.arity:
+    if len(node.args) != arity:
+        noun = "argument" if arity == 1 else "arguments"
         raise InvalidFormulaError(
-            f"{node.func.id}() takes {spec.arity} arguments, got {len(node.args)}"
+            f"{node.func.id}() takes {arity} {noun}, got {len(node.args)}"
         )
 
 

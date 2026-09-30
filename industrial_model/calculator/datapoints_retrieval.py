@@ -44,7 +44,8 @@ class DatapointsRetriever:
             )
 
         if timer is not None:
-            timer.unique_timeseries = len(requests)
+            # A call may retrieve once per window; count every request.
+            timer.unique_timeseries += len(requests)
         logger.debug(
             "built %s unique timeseries request(s) for %s parameter(s)",
             len(requests),

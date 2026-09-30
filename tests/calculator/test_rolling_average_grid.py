@@ -377,3 +377,37 @@ def test_calculate_rolling_average_strict_fills_when_timestamps_match() -> None:
     assert [dp.timestamp for dp in result.datapoints] == [
         _START + timedelta(minutes=offset) for offset in range(3)
     ]
+
+
+def test_calculate_rolling_average_uses_fill_value_for_missing_minutes() -> None:
+    end = _START + timedelta(minutes=9)
+    param = TimeSeriesParameter(
+        alias="GQ",
+        timeseries_instance_id=InstanceId(space="s", external_id="ts1"),
+        aggregate_type="sum",
+        granularity="1m",
+        fill_value=0.0,
+    )
+    raw = [
+        _aggregate_datapoints(
+            "ts1",
+            [10.0, 20.0, 30.0, 100.0, 110.0, 120.0],
+            _gq_gap_timestamps(),
+        )
+    ]
+
+    result = _calculate(
+        Calculator(_client_returning(raw)),
+        CalculatorQuery(formula="rolling_average({GQ}, 3)", parameters=[param]),
+        _START,
+        end,
+    )
+
+    # Minutes 3-5 count as zeros inside the window instead of being skipped.
+    assert [dp.timestamp for dp in result.datapoints] == [
+        _START + timedelta(minutes=minute) for minute in range(9)
+    ]
+    assert [dp.value for dp in result.datapoints] == pytest.approx(
+        [10.0, 15.0, 20.0, 50.0 / 3, 10.0, 0.0, 100.0 / 3, 70.0, 110.0]
+    )
+    assert [dp.value for dp in result.inputs["GQ"]][3:6] == [0.0, 0.0, 0.0]

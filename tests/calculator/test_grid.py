@@ -169,3 +169,12 @@ def test_expand_series_on_grid_inserts_nan_for_missing_buckets() -> None:
 )
 def test_formula_uses_rolling_average_parametrized(formula: str) -> None:
     assert formula_uses_rolling_average(formula) is ("rolling_average" in formula)
+
+
+def test_expand_series_on_grid_uses_the_fill_value_for_missing_buckets() -> None:
+    start = datetime(2024, 1, 1, tzinfo=UTC)
+    grid = [start, start + timedelta(minutes=1)]
+
+    filled = expand_series_on_grid([(start, 10.0)], grid, 0.0)
+
+    assert filled == [(start, 10.0), (grid[1], 0.0)]
