@@ -35,6 +35,9 @@ class TimeSeriesParameterBase(BaseModel):
     alias: str
     aggregate_type: Aggregate | None = None
     granularity: str | None = None
+    # Value used at a timestamp where this series has no point but another
+    # parameter does (``0`` for a count). ``None`` drops that timestamp.
+    fill_value: float | None = Field(default=None, allow_inf_nan=False)
 
     def instance_ids(self) -> Sequence[InstanceId]:
         raise NotImplementedError
@@ -98,6 +101,10 @@ class CalculatorQuery(BaseModel):
     formula: str
     parameters: list[CalculatorParameter]
     alignment: AlignmentMode = "intersect"
+    # Granularity the results of a ``sum(...)`` / ``average(...)`` formula
+    # are aggregated by, after it runs on the parameters as fetched. Required
+    # by those formulas and ignored by every other one.
+    bucket_granularity: str | None = None
 
     @model_validator(mode="after")
     def _validate_unique_aliases(self) -> CalculatorQuery:
@@ -113,6 +120,23 @@ class CalculatorQuery(BaseModel):
             )
         return self
 
+    @model_validator(mode="after")
+    def _validate_fill_alignment(self) -> CalculatorQuery:
+        if self.alignment != "strict":
+            return self
+        filled = [
+            parameter.alias
+            for parameter in self.parameters
+            if isinstance(parameter, TimeSeriesParameterBase)
+            and parameter.fill_value is not None
+        ]
+        if filled:
+            raise ValueError(
+                "fill_value needs alignment='intersect'; strict alignment "
+                f"never fills: {', '.join(filled)}"
+            )
+        return self
+
 
 @dataclass(slots=True, frozen=True)
 class CalculationResult:
@@ -120,4 +144,7 @@ class CalculationResult:
 
     query: CalculatorQuery
     datapoints: list[DataPoint]
+    # Index-aligned with ``datapoints``, except for a ``sum(...)`` /
+    # ``average(...)`` formula: there each input holds the aligned points the
+    # formula ran on, before its results were aggregated into ``datapoints``.
     inputs: dict[str, list[DataPoint]] = field(default_factory=dict)

@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 
+import pytest
+
 from industrial_model.calculator.series_reducer import SeriesReducer
 
 _T0 = datetime(2024, 1, 1, 0, 0, tzinfo=UTC)
@@ -302,3 +304,124 @@ def test_align_does_not_mutate_input_series() -> None:
 
     assert series_a == original_a
     assert series_b == original_b
+
+
+# ---------------------------------------------------------------------------
+# reduce with a fill value
+# ---------------------------------------------------------------------------
+
+
+def test_reduce_with_fill_value_combines_on_the_union_of_timestamps() -> None:
+    reducer = SeriesReducer()
+    line_a = _series((_T0, 5.0), (_T1, 5.0), (_T2, 5.0))
+    line_b = _series((_T0, 3.0), (_T2, 3.0))
+
+    result = reducer.reduce([line_a, line_b], "sum", 0.0)
+
+    # T1 keeps line A's count instead of being dropped.
+    assert result == [(_T0, 8.0), (_T1, 5.0), (_T2, 8.0)]
+
+
+def test_reduce_with_fill_value_keeps_a_series_when_another_is_empty() -> None:
+    reducer = SeriesReducer()
+    line_a = _series((_T0, 5.0), (_T1, 5.0))
+
+    assert reducer.reduce([line_a, []], "sum", 0.0) == line_a
+
+
+def test_reduce_with_fill_value_fills_before_reducing() -> None:
+    reducer = SeriesReducer()
+    a = _series((_T0, 4.0), (_T1, 6.0))
+    b = _series((_T1, 2.0))
+
+    assert reducer.reduce([a, b], "average", 0.0) == [(_T0, 2.0), (_T1, 4.0)]
+    assert reducer.reduce([a, b], "min", -1.0) == [(_T0, -1.0), (_T1, 2.0)]
+
+
+def test_reduce_with_fill_value_of_empty_series_is_empty() -> None:
+    assert SeriesReducer().reduce([[], []], "sum", 0.0) == []
+
+
+# ---------------------------------------------------------------------------
+# align_filled
+# ---------------------------------------------------------------------------
+
+
+def test_align_filled_fills_a_series_missing_a_required_timestamp() -> None:
+    reducer = SeriesReducer()
+    required = _series((_T0, 10.0), (_T1, 20.0), (_T2, 30.0))
+    counts = _series((_T1, 5.0))
+
+    aligned = reducer.align_filled([required, counts], [None, 0.0])
+
+    assert aligned == [
+        [(_T0, 10.0), (_T1, 20.0), (_T2, 30.0)],
+        [(_T0, 0.0), (_T1, 5.0), (_T2, 0.0)],
+    ]
+
+
+def test_align_filled_never_adds_a_timestamp_a_required_series_lacks() -> None:
+    reducer = SeriesReducer()
+    required = _series((_T1, 20.0))
+    counts = _series((_T0, 1.0), (_T1, 2.0), (_T2, 3.0))
+
+    aligned = reducer.align_filled([required, counts], [None, 0.0])
+
+    assert aligned == [[(_T1, 20.0)], [(_T1, 2.0)]]
+
+
+def test_align_filled_intersects_required_series() -> None:
+    reducer = SeriesReducer()
+    a = _series((_T0, 1.0), (_T1, 2.0))
+    b = _series((_T1, 3.0), (_T2, 4.0))
+    c = _series()
+
+    aligned = reducer.align_filled([a, b, c], [None, None, 9.0])
+
+    assert aligned == [[(_T1, 2.0)], [(_T1, 3.0)], [(_T1, 9.0)]]
+
+
+def test_align_filled_uses_the_union_when_every_series_fills() -> None:
+    reducer = SeriesReducer()
+    a = _series((_T2, 1.0), (_T0, 2.0))
+    b = _series((_T1, 3.0))
+
+    aligned = reducer.align_filled([a, b], [0.0, -1.0])
+
+    assert aligned == [
+        [(_T0, 2.0), (_T1, 0.0), (_T2, 1.0)],
+        [(_T0, -1.0), (_T1, 3.0), (_T2, -1.0)],
+    ]
+
+
+def test_align_filled_empty_required_series_is_empty() -> None:
+    reducer = SeriesReducer()
+
+    aligned = reducer.align_filled([_series(), _series((_T0, 1.0))], [None, 0.0])
+
+    assert aligned == [[], []]
+
+
+def test_align_filled_keeps_the_last_value_of_a_duplicate_timestamp() -> None:
+    reducer = SeriesReducer()
+
+    aligned = reducer.align_filled(
+        [_series((_T0, 1.0), (_T0, 2.0)), _series()], [None, 0.0]
+    )
+
+    assert aligned == [[(_T0, 2.0)], [(_T0, 0.0)]]
+
+
+def test_align_filled_rejects_mismatched_fill_values() -> None:
+    reducer = SeriesReducer()
+
+    with pytest.raises(ValueError, match="fill value"):
+        reducer.align_filled([_series((_T0, 1.0))], [])
+
+
+def test_align_filled_returns_series_that_already_share_timestamps() -> None:
+    reducer = SeriesReducer()
+    a = _series((_T0, 1.0), (_T1, 2.0))
+    b = _series((_T0, 3.0), (_T1, 4.0))
+
+    assert reducer.align_filled([a, b], [None, 0.0]) == [a, b]

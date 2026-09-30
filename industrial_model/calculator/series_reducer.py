@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 from datetime import datetime
 from typing import assert_never
 
@@ -75,6 +75,15 @@ def _iter_aligned_rows(
             idx[j] += 1
 
 
+def _share_timestamps(prepared: list[Series]) -> bool:
+    first = prepared[0]
+    return all(
+        len(leaf) == len(first)
+        and all(a[0] == b[0] for a, b in zip(leaf, first, strict=True))
+        for leaf in prepared[1:]
+    )
+
+
 def _reduce_values(values: tuple[float, ...], reducer: ReducerType) -> float:
     match reducer:
         case "min":
@@ -105,11 +114,24 @@ class SeriesReducer:
         self,
         series: list[Series],
         reducer: ReducerType,
+        fill_value: float | None = None,
     ) -> Series:
+        """Combine several series into one on their common timestamps.
+
+        With ``fill_value``, combine on the union of their timestamps
+        instead: a series without a point at a timestamp counts as
+        ``fill_value`` there (``0`` for a count summed across lines).
+        """
         if not series:
             return []
         if len(series) == 1:
             return _prepare(list(series[0]))
+        if fill_value is not None:
+            filled = self.align_filled(series, [fill_value] * len(series))
+            return [
+                (ts, _reduce_values(tuple(leaf[i][1] for leaf in filled), reducer))
+                for i, (ts, _) in enumerate(filled[0])
+            ]
         if any(not leaf for leaf in series):
             return []
 
@@ -130,5 +152,49 @@ class SeriesReducer:
         aligned: list[Series] = [[] for _ in series]
         for ts, values in _iter_aligned_rows([_prepare(leaf) for leaf in series]):
             for j, value in enumerate(values):
+                aligned[j].append((ts, value))
+        return aligned
+
+    def align_filled(
+        self,
+        series: list[Series],
+        fill_values: Sequence[float | None],
+    ) -> list[Series]:
+        """Align on the union of timestamps, filling where a value is given.
+
+        A timestamp is kept when every series without a fill value has a
+        point there; a series with a fill value uses it where it has none.
+        When every series has a fill value, the axis is the union of all
+        their timestamps.
+        """
+        if len(fill_values) != len(series):
+            raise ValueError(
+                f"got {len(fill_values)} fill value(s) for {len(series)} series"
+            )
+        if not series:
+            return []
+
+        prepared = [_prepare(list(leaf)) for leaf in series]
+        if _share_timestamps(prepared):
+            # Nothing to fill: the usual case for series on one minute grid.
+            return prepared
+
+        by_timestamp = [dict(leaf) for leaf in prepared]
+        required = [index for index, fill in enumerate(fill_values) if fill is None]
+        if required:
+            first = min(required, key=lambda index: len(by_timestamp[index]))
+            axis = sorted(by_timestamp[first])
+        else:
+            axis = sorted(set().union(*by_timestamp))
+
+        aligned: list[Series] = [[] for _ in series]
+        for ts in axis:
+            if any(ts not in by_timestamp[index] for index in required):
+                continue
+            for j, values in enumerate(by_timestamp):
+                value = values.get(ts)
+                if value is None:
+                    value = fill_values[j]
+                    assert value is not None
                 aligned[j].append((ts, value))
         return aligned

@@ -780,3 +780,67 @@ def test_calculate_multiples_batches_real_queries_together(
     assert [dp.value for dp in reducer_result.datapoints] == pytest.approx(
         [600.0, 630.0]
     )
+
+
+# ---------------------------------------------------------------------------
+# Bucket aggregates: sum(...) must land on CDF's own buckets
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("granularity", "timezone", "start"),
+    [
+        # Mid-bucket start: CDF floors to the unit and returns whole buckets.
+        ("1h", None, _BASE + timedelta(minutes=37)),
+        ("2h", None, _BASE + timedelta(minutes=37)),
+        # Half-hour offset: local hours start at :30 UTC.
+        ("1h", "UTC+05:30", _BASE),
+        # 00:15Z / 01:15Z are 31 Dec in Denver; the day starts at 07:00Z.
+        ("1d", "America/Denver", _BASE),
+    ],
+)
+def test_bucket_sum_matches_native_cdf_sum_aggregate(
+    calculator: Calculator,
+    dataset: _Dataset,
+    granularity: str,
+    timezone: str | None,
+    start: datetime,
+) -> None:
+    # sum({X}) over per-minute sums, aggregated by the granularity, equals
+    # CDF's own sum aggregate, so any difference is a bucket boundary or
+    # window-span mismatch.
+    def query(
+        formula: str, fetch: str, bucket_granularity: str | None
+    ) -> CalculatorQuery:
+        return CalculatorQuery(
+            formula=formula,
+            parameters=[
+                TimeSeriesParameter(
+                    alias="L1",
+                    timeseries_instance_id=dataset.line_1,
+                    aggregate_type="sum",
+                    granularity=fetch,
+                )
+            ],
+            bucket_granularity=bucket_granularity,
+        )
+
+    native, bucketed = asyncio.run(
+        calculator.calculate_multiples(
+            [
+                query("{L1}", granularity, None),
+                query("sum({L1})", "1m", granularity),
+            ],
+            start,
+            _WINDOW_END,
+            timezone=timezone,
+        )
+    )
+
+    assert native.datapoints
+    assert [dp.timestamp for dp in bucketed.datapoints] == [
+        dp.timestamp for dp in native.datapoints
+    ]
+    assert [dp.value for dp in bucketed.datapoints] == pytest.approx(
+        [dp.value for dp in native.datapoints]
+    )

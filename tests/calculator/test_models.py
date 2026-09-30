@@ -385,3 +385,43 @@ def test_calculation_result_is_a_frozen_dataclass() -> None:
     assert result == CalculationResult(query=query, datapoints=[], inputs={})
     with pytest.raises(FrozenInstanceError):
         result.datapoints = []  # type: ignore[misc]
+
+
+# ---------------------------------------------------------------------------
+# fill_value and bucket_granularity
+# ---------------------------------------------------------------------------
+
+
+def _series_param(fill_value: float | None = None) -> TimeSeriesParameter:
+    return TimeSeriesParameter(
+        alias="A",
+        timeseries_instance_id=InstanceId(space="s", external_id="x"),
+        fill_value=fill_value,
+    )
+
+
+def test_fill_value_defaults_to_none() -> None:
+    assert _series_param().fill_value is None
+
+
+@pytest.mark.parametrize("value", [float("nan"), float("inf")])
+def test_fill_value_must_be_finite(value: float) -> None:
+    with pytest.raises(ValidationError):
+        _series_param(value)
+
+
+def test_fill_value_is_rejected_with_strict_alignment() -> None:
+    with pytest.raises(ValidationError, match="fill_value needs alignment"):
+        CalculatorQuery(
+            formula="{A}", parameters=[_series_param(0.0)], alignment="strict"
+        )
+
+
+def test_fill_value_is_accepted_with_intersect_alignment() -> None:
+    query = CalculatorQuery(formula="{A}", parameters=[_series_param(0.0)])
+
+    assert query.parameters[0].fill_value == 0.0  # type: ignore[union-attr]
+
+
+def test_bucket_granularity_has_no_default() -> None:
+    assert CalculatorQuery(formula="{A}", parameters=[]).bucket_granularity is None

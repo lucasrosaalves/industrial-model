@@ -5,6 +5,7 @@ from collections.abc import Mapping
 from ._compiler import compile_formula
 from ._runtime import evaluate_compiled
 from ._types import EvaluationResult, ParameterValue
+from .exceptions import InvalidFormulaError
 
 
 def evaluate(
@@ -45,8 +46,18 @@ def evaluate(
     outer ``if`` does not protect neighbors in the window of a selected
     index. A call that is never selected, and indexes that are not in any
     selected window, are not evaluated.
+
+    A formula that calls ``sum(...)`` / ``average(...)`` aggregates into time
+    buckets, which needs timestamps: it raises ``InvalidFormulaError`` here
+    and is evaluated by ``Calculator`` instead.
     """
 
+    compiled = compile_formula(formula)
+    if compiled.bucket_terms:
+        raise InvalidFormulaError(
+            "sum() / average() aggregate into time buckets; "
+            "evaluate the formula with Calculator"
+        )
     values = dict(parameters or {})
     values.update(kwargs)
-    return evaluate_compiled(compile_formula(formula), values)
+    return evaluate_compiled(compiled, values)

@@ -9,6 +9,7 @@ from datetime import UTC, datetime, timedelta, tzinfo
 
 from ._timezone import as_tzinfo, to_utc
 from .formula_expression._compiler import compile_formula
+from .formula_expression._types import BucketAggregate
 from .models import Series, TimeSeriesParameterBase
 
 # Longer unit names first so ``1mo`` is not parsed as ``1m``.
@@ -66,6 +67,18 @@ _UNIT_ALIASES = {
 # Units whose buckets follow the calendar rather than a fixed length.
 CALENDAR_UNITS = frozenset({"mo", "q", "y"})
 _MONTHS_PER_UNIT = {"mo": 1, "q": 3, "y": 12}
+
+# Shortest length of one unit, to compare granularities (``1m`` < ``1d``).
+_MIN_UNIT_SECONDS = {
+    "s": 1,
+    "m": 60,
+    "h": 3_600,
+    "d": 86_400,
+    "w": 7 * 86_400,
+    "mo": 28 * 86_400,
+    "q": 89 * 86_400,
+    "y": 365 * 86_400,
+}
 
 
 def formula_uses_rolling_average(formula: str) -> bool:
@@ -162,11 +175,17 @@ def build_bucket_grid(
     return grid
 
 
-def expand_series_on_grid(series: Series, grid: list[datetime]) -> Series:
+def expand_series_on_grid(
+    series: Series, grid: list[datetime], fill: float | None = None
+) -> Series:
+    """Place ``series`` on ``grid``; a bucket without a point gets ``fill``.
+
+    Without a fill value the bucket is ``NaN``.
+    """
+    missing = math.nan if fill is None else fill
     values = {_timestamp_ms(timestamp): value for timestamp, value in series}
     return [
-        (timestamp, values.get(_timestamp_ms(timestamp), math.nan))
-        for timestamp in grid
+        (timestamp, values.get(_timestamp_ms(timestamp), missing)) for timestamp in grid
     ]
 
 
@@ -212,3 +231,138 @@ def _localize(naive: datetime, tz: tzinfo | None) -> datetime:
     if tz is None:
         return naive.replace(tzinfo=UTC)
     return naive.replace(tzinfo=tz)
+
+
+def min_granularity_seconds(granularity: str) -> int | None:
+    """Shortest possible bucket length, or ``None`` for an unknown granularity."""
+
+    parsed = parse_granularity(granularity)
+    if parsed is None:
+        return None
+    quantity, unit = parsed
+    return quantity * _MIN_UNIT_SECONDS[unit]
+
+
+def bucket_span(
+    start: datetime,
+    end: datetime,
+    granularity: str,
+    timezone: str | None,
+) -> tuple[datetime, datetime]:
+    """The whole buckets CDF aggregates over for ``[start, end)``, as UTC.
+
+    CDF floors ``start`` to the granularity's *unit*, not its multiple:
+    ``2h`` from 13:37 starts at 13:00, ``7d`` and ``1w`` at that day's local
+    midnight (not a Monday), ``3mo`` / ``1q`` / ``1y`` at the 1st of that
+    local month. The last bucket that starts before ``end`` is returned
+    whole. Every bucket holds all of its data, including data outside
+    ``[start, end)``. An empty window spans nothing.
+    """
+
+    quantity, unit = _require_granularity(granularity)
+    tz = as_tzinfo(timezone)
+    start_utc = to_utc(start)
+    end_utc = to_utc(end)
+    origin = _floor_to_unit(start_utc, unit, tz)
+    if end_utc <= start_utc:
+        return origin, origin
+    stop = origin
+    while stop < end_utc:
+        stop = _next_bucket(stop, quantity, unit, tz)
+    return origin, stop
+
+
+def aggregate_into_buckets(
+    series: Series,
+    origin: datetime,
+    granularity: str,
+    timezone: str | None,
+    aggregate: BucketAggregate,
+) -> Series:
+    """Aggregate an ascending series into buckets that start at ``origin``.
+
+    ``origin`` comes from :func:`bucket_span`, so bucket starts match the
+    timestamps CDF returns for the same granularity and timezone. ``NaN``
+    values are skipped; a bucket with no value is omitted, as CDF omits
+    empty buckets.
+    """
+
+    quantity, unit = _require_granularity(granularity)
+    tz = as_tzinfo(timezone)
+    result: Series = []
+    bucket_start = to_utc(origin)
+    bucket_end = _next_bucket(bucket_start, quantity, unit, tz)
+    values: list[float] = []
+    for timestamp, value in series:
+        moment = to_utc(timestamp)
+        if moment < bucket_start:
+            continue
+        while moment >= bucket_end:
+            if values:
+                result.append((bucket_start, _aggregate(values, aggregate)))
+                values = []
+            bucket_start = bucket_end
+            bucket_end = _next_bucket(bucket_start, quantity, unit, tz)
+        if not math.isnan(value):
+            values.append(value)
+    if values:
+        result.append((bucket_start, _aggregate(values, aggregate)))
+    return result
+
+
+def _aggregate(values: list[float], aggregate: BucketAggregate) -> float:
+    total = math.fsum(values)
+    if aggregate == "sum":
+        return total
+    return total / len(values)
+
+
+def _require_granularity(granularity: str) -> tuple[int, str]:
+    parsed = parse_granularity(granularity)
+    if parsed is None:
+        raise ValueError(f"unsupported granularity: {granularity!r}")
+    return parsed
+
+
+def _floor_to_unit(moment: datetime, unit: str, tz: tzinfo) -> datetime:
+    """Start of the unit containing ``moment`` (UTC in, UTC out).
+
+    Sub-hour units floor in UTC (CDF ignores the timezone for them); hour
+    and longer floor on the local calendar of ``tz``.
+    """
+
+    if unit == "s":
+        return moment.replace(microsecond=0)
+    if unit == "m":
+        return moment.replace(second=0, microsecond=0)
+    local = moment.astimezone(tz)
+    if unit == "h":
+        floored = local.replace(minute=0, second=0, microsecond=0)
+    elif unit in ("d", "w"):
+        floored = local.replace(hour=0, minute=0, second=0, microsecond=0)
+    else:
+        floored = local.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    return floored.astimezone(UTC)
+
+
+def _next_bucket(moment: datetime, quantity: int, unit: str, tz: tzinfo) -> datetime:
+    """Start of the bucket after the one starting at ``moment`` (UTC).
+
+    Hours are fixed durations, so a DST fall-back day has 25 hourly
+    buckets. Days and longer follow the local wall clock (23/25 h days).
+    """
+
+    if unit == "s":
+        return moment + timedelta(seconds=quantity)
+    if unit == "m":
+        return moment + timedelta(minutes=quantity)
+    if unit == "h":
+        return moment + timedelta(hours=quantity)
+    local = moment.astimezone(tz)
+    if unit == "d":
+        shifted = _shift_wall(local, days=quantity)
+    elif unit == "w":
+        shifted = _shift_wall(local, days=7 * quantity)
+    else:
+        shifted = _shift_months(local, quantity * _MONTHS_PER_UNIT[unit])
+    return shifted.astimezone(UTC)
