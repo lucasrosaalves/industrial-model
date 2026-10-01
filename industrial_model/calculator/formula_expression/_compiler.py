@@ -73,6 +73,26 @@ class CompiledFormula:
     has_conditional: bool
     bucket_terms: tuple[BucketTerm, ...] = ()
 
+    @property
+    def outer_parameters(self) -> tuple[str, ...]:
+        """Placeholders outside any ``sum(...)`` / ``average(...)`` call.
+
+        For a plain formula this is every placeholder. In a bucket formula
+        they are evaluated per bucket, where only constants have a value.
+        """
+        keys = {term.key for term in self.bucket_terms}
+        return tuple(name for name in self.variables if name not in keys)
+
+    @property
+    def parameters(self) -> tuple[str, ...]:
+        """Every placeholder the formula references, in first-seen order.
+
+        Includes the ones inside ``sum(...)`` / ``average(...)`` calls, so it
+        is the set of aliases a ``CalculatorQuery`` needs for this formula.
+        """
+        inner = (name for term in self.bucket_terms for name in term.formula.parameters)
+        return tuple(dict.fromkeys((*self.outer_parameters, *inner)))
+
 
 @dataclass(frozen=True, slots=True)
 class BucketTerm:
