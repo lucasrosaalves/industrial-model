@@ -1,17 +1,33 @@
 from __future__ import annotations
 
 import industrial_model.calculator.formula_expression as formula_expression
-from industrial_model.calculator.formula_expression import evaluate
+from industrial_model.calculator.formula_expression import (
+    CompiledFormula,
+    compile_formula,
+    evaluate,
+)
+from industrial_model.calculator.formula_expression._compiler import (
+    CompiledFormula as _CompiledFormula,
+)
+from industrial_model.calculator.formula_expression._compiler import (
+    compile_formula as _compile_formula,
+)
 from tests.calculator.formula_expression._support import assert_values_equal
 
 
-def test_package_exports_only_evaluate() -> None:
-    assert formula_expression.__all__ == ["evaluate"]
+def test_package_exports_evaluate_and_compile_formula() -> None:
+    assert formula_expression.__all__ == [
+        "CompiledFormula",
+        "compile_formula",
+        "evaluate",
+    ]
     assert formula_expression.evaluate is evaluate
+    # The public names are the engine's own compiler, not copies.
+    assert compile_formula is _compile_formula
+    assert CompiledFormula is _CompiledFormula
 
 
 def test_private_helpers_are_not_exported_at_package_top_level() -> None:
-    assert not hasattr(formula_expression, "compile_formula")
     assert not hasattr(formula_expression, "Formula")
     assert not hasattr(formula_expression, "FormulaError")
 

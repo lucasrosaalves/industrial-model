@@ -349,6 +349,23 @@ def evaluate(
 ) -> tuple[float, ...]: ...
 ```
 
+### Inspecting a formula: `compile_formula`
+
+`compile_formula` parses and validates a formula without evaluating it — the same compilation `Calculator` and `evaluate` use. Results are cached (`functools.lru_cache`, keyed on the formula text), so calling it once per query is cheap. Use it to check a formula, or which aliases a query needs, before building a batch:
+
+```python
+from industrial_model.calculator.formula_expression import compile_formula
+from industrial_model.calculator.formula_expression.exceptions import InvalidFormulaError
+
+compiled = compile_formula("sum({A} * {B}) / {K}")
+compiled.parameters        # ('K', 'A', 'B') — every placeholder, incl. inside sum()/average()
+compiled.outer_parameters  # ('K',) — evaluated per bucket, so only constants may go here
+
+compile_formula("SUM({A})")  # raises InvalidFormulaError: unknown formula function: SUM
+```
+
+A `Calculator` batch fails as a whole when one of its queries is invalid, so checking `parameters` against a query's aliases (and that no time-series alias is in `outer_parameters` of a bucket formula) up front keeps one bad query from failing the rest.
+
 ### Formula syntax
 
 Formulas are plain text with `{NAME}` placeholders substituted by parameter series. Supported grammar (a strict, safe subset of Python expressions — parsed via `ast` and validated against an explicit allow-list, so nothing outside this list, including unknown function calls, attribute access, subscripting, or comprehensions, is accepted):
