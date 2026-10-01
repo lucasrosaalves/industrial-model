@@ -1,7 +1,16 @@
 from __future__ import annotations
 
 import industrial_model.calculator as calculator
-from industrial_model.calculator.formula_expression import evaluate
+from industrial_model.calculator.formula_expression import compile_formula, evaluate
+from industrial_model.calculator.formula_expression._compiler import (
+    compile_formula as _compile_formula,
+)
+from industrial_model.calculator.formula_expression.exceptions import (
+    InvalidFormulaError,
+)
+from industrial_model.calculator.formula_expression.exceptions import (
+    InvalidFormulaError as _InvalidFormulaError,
+)
 
 
 def test_public_names_match_all() -> None:
@@ -15,6 +24,13 @@ def test_evaluate_is_re_exported_from_package() -> None:
     assert calculator.evaluate is evaluate
 
 
+def test_compile_formula_and_invalid_formula_error_are_re_exported() -> None:
+    assert calculator.compile_formula is _compile_formula
+    assert calculator.compile_formula is compile_formula
+    assert calculator.InvalidFormulaError is _InvalidFormulaError
+    assert calculator.InvalidFormulaError is InvalidFormulaError
+
+
 def test_all_contains_expected_public_surface() -> None:
     assert set(calculator.__all__) == {
         "AlignmentMode",
@@ -25,8 +41,10 @@ def test_all_contains_expected_public_surface() -> None:
         "CalculatorQuery",
         "ConstantParameter",
         "DataPoint",
+        "InvalidFormulaError",
         "MultiTimeSeriesParameter",
         "ReducerType",
         "TimeSeriesParameter",
+        "compile_formula",
         "evaluate",
     }
