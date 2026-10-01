@@ -15,6 +15,18 @@ def _series(*pairs: tuple[datetime, float]) -> list[tuple[datetime, float]]:
     return list(pairs)
 
 
+def _reduce_sum_via_align_filled(
+    reducer: SeriesReducer,
+    lines: list[list[tuple[datetime, float]]],
+    fill_value: float,
+) -> list[tuple[datetime, float]]:
+    filled = reducer.align_filled(lines, [fill_value] * len(lines))
+    return [
+        (ts, sum(leaf[i][1] for leaf in filled))
+        for i, (ts, _) in enumerate(filled[0])
+    ]
+
+
 # ---------------------------------------------------------------------------
 # Zero / one series (no reduction needed)
 # ---------------------------------------------------------------------------
@@ -329,6 +341,16 @@ def test_reduce_with_fill_value_keeps_a_series_when_another_is_empty() -> None:
     assert reducer.reduce([line_a, []], "sum", 0.0) == line_a
 
 
+def test_reduce_sum_non_zero_fill_counts_empty_series() -> None:
+    reducer = SeriesReducer()
+    line_a = _series((_T0, 10.0), (_T1, 20.0))
+
+    assert reducer.reduce([line_a, []], "sum", 5.0) == [(_T0, 15.0), (_T1, 25.0)]
+    assert reducer.reduce([line_a, []], "sum", 5.0) == _reduce_sum_via_align_filled(
+        reducer, [line_a, []], 5.0
+    )
+
+
 def test_reduce_with_fill_value_fills_before_reducing() -> None:
     reducer = SeriesReducer()
     a = _series((_T0, 4.0), (_T1, 6.0))
@@ -340,6 +362,38 @@ def test_reduce_with_fill_value_fills_before_reducing() -> None:
 
 def test_reduce_with_fill_value_of_empty_series_is_empty() -> None:
     assert SeriesReducer().reduce([[], []], "sum", 0.0) == []
+
+
+@pytest.mark.parametrize("fill_value", [0.0, -1.0, 5.0])
+def test_reduce_sum_filled_matches_union_grid(fill_value: float) -> None:
+    """Filled sum must match align_filled + sum for scrap-style misalignment."""
+    reducer = SeriesReducer()
+    base = datetime(2024, 6, 1, tzinfo=UTC)
+    lines = [
+        [
+            (base + timedelta(minutes=i), float(i % 7))
+            for i in range(0, 120, 3 + (n % 4))
+        ]
+        for n in range(40)
+    ]
+    assert reducer.reduce(lines, "sum", fill_value) == _reduce_sum_via_align_filled(
+        reducer, lines, fill_value
+    )
+
+
+@pytest.mark.parametrize("fill_value", [0.0, 3.0])
+def test_reduce_sum_filled_with_some_empty_inputs(fill_value: float) -> None:
+    reducer = SeriesReducer()
+    base = datetime(2024, 6, 1, tzinfo=UTC)
+    lines: list[list[tuple[datetime, float]]] = [
+        [(base, 1.0), (base + timedelta(hours=1), 2.0)],
+        [],
+        [(base + timedelta(hours=1), 4.0)],
+        [],
+    ]
+    assert reducer.reduce(lines, "sum", fill_value) == _reduce_sum_via_align_filled(
+        reducer, lines, fill_value
+    )
 
 
 # ---------------------------------------------------------------------------

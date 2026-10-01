@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections import defaultdict
 from collections.abc import Iterator, Sequence
 from datetime import datetime
 from typing import assert_never
@@ -98,6 +99,35 @@ def _reduce_values(values: tuple[float, ...], reducer: ReducerType) -> float:
             assert_never(reducer)
 
 
+def _reduce_sum_filled(series: list[Series], fill_value: float) -> Series:
+    """Sum several series on the union of their timestamps without a full grid.
+
+    A missing point counts as ``fill_value``, including series that are empty
+    (they never have a point). Empty input series still count toward how many
+    fills apply at each timestamp. One pass over datapoints instead of
+    materializing ``len(axis) × len(series)`` rows.
+    """
+    prepared = [_prepare(list(leaf)) for leaf in series if leaf]
+    if not prepared:
+        return []
+
+    n_series = len(series)
+    totals: defaultdict[datetime, float] = defaultdict(float)
+    present: defaultdict[datetime, int] = defaultdict(int)
+    for leaf in prepared:
+        for ts, value in leaf:
+            totals[ts] += value
+            present[ts] += 1
+    if not totals:
+        return []
+    if fill_value == 0.0:
+        return sorted(totals.items(), key=lambda point: point[0])
+    return [
+        (ts, totals[ts] + fill_value * (n_series - present[ts]))
+        for ts in sorted(totals)
+    ]
+
+
 class SeriesReducer:
     """Combines or aligns multiple timeseries by intersecting on timestamp.
 
@@ -127,6 +157,8 @@ class SeriesReducer:
         if len(series) == 1:
             return _prepare(list(series[0]))
         if fill_value is not None:
+            if reducer == "sum":
+                return _reduce_sum_filled(series, fill_value)
             filled = self.align_filled(series, [fill_value] * len(series))
             return [
                 (ts, _reduce_values(tuple(leaf[i][1] for leaf in filled), reducer))
