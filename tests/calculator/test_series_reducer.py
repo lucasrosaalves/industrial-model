@@ -22,8 +22,7 @@ def _reduce_sum_via_align_filled(
 ) -> list[tuple[datetime, float]]:
     filled = reducer.align_filled(lines, [fill_value] * len(lines))
     return [
-        (ts, sum(leaf[i][1] for leaf in filled))
-        for i, (ts, _) in enumerate(filled[0])
+        (ts, sum(leaf[i][1] for leaf in filled)) for i, (ts, _) in enumerate(filled[0])
     ]
 
 
