@@ -354,8 +354,7 @@ def evaluate(
 `compile_formula` parses and validates a formula without evaluating it — the same compilation `Calculator` and `evaluate` use. Results are cached (`functools.lru_cache`, keyed on the formula text), so calling it once per query is cheap. Use it to check a formula, or which aliases a query needs, before building a batch:
 
 ```python
-from industrial_model.calculator.formula_expression import compile_formula
-from industrial_model.calculator.formula_expression.exceptions import InvalidFormulaError
+from industrial_model.calculator import compile_formula, InvalidFormulaError
 
 compiled = compile_formula("sum({A} * {B}) / {K}")
 compiled.parameters        # ('K', 'A', 'B') — every placeholder, incl. inside sum()/average()

@@ -2,7 +2,8 @@ import logging
 
 from .calculator import Calculator
 from .exceptions import CalculatorError
-from .formula_expression import evaluate
+from .formula_expression import compile_formula, evaluate
+from .formula_expression.exceptions import InvalidFormulaError
 from .models import (
     AlignmentMode,
     CalculationResult,
@@ -24,9 +25,11 @@ __all__ = [
     "CalculatorQuery",
     "ConstantParameter",
     "DataPoint",
+    "InvalidFormulaError",
     "MultiTimeSeriesParameter",
     "ReducerType",
     "TimeSeriesParameter",
+    "compile_formula",
     "evaluate",
 ]
 
